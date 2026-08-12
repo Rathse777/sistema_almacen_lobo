@@ -50,8 +50,7 @@ CREATE TABLE IF NOT EXISTS Ventas (
   id_venta INTEGER PRIMARY KEY AUTOINCREMENT,
   fecha TEXT NOT NULL,
   total REAL NOT NULL,
-  tipo_pago TEXT NOT NULL CHECK (tipo_pago IN ('efectivo','pago_móvil')),
-  monto_recibido REAL, -- solo para efectivo
+  monto_recibido REAL,
   id_usuario INTEGER,
   anulada INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (id_usuario) REFERENCES Usuarios(Id_usuario) ON DELETE SET NULL

@@ -1,160 +1,92 @@
-<% layout('layout') -%>
-<% title = venta ? 'Editar venta' : 'Nueva venta' %>
+<%- include('layout', { title: 'Registrar Venta' }) %>
+
+<h1 class="mb-4">Registrar Nueva Venta</h1>
 
 <div class="row">
-  <div class="col-lg-8 mx-auto">
-    <div class="card-modern">
-      <div class="card-header">
-        <i class="fas fa-cart-plus me-2"></i>
-        <%= title %>
-      </div>
-      <div class="card-body">
-        <% if (error) { %>
-          <div class="alert alert-modern alert-modern-danger">
-            <i class="fas fa-exclamation-circle me-2"></i> <%= error %>
-          </div>
-        <% } %>
-
-        <form method="POST" action="<%= venta ? ('/ventas/' + venta.id_venta + '/editar') : '/ventas' %>" onsubmit="return validarVenta(this)">
-          
-          <!-- Productos -->
-          <div class="mb-3">
-            <label class="form-label fw-semibold">
-              <i class="fas fa-box me-2 text-muted"></i>Productos
-            </label>
-            <div id="lineas-productos">
-              <% if (detalles && detalles.length) { %>
-                <% detalles.forEach((d, idx) => { %>
-                  <div class="row g-2 mb-2 linea">
-                    <div class="col-md-7">
-                      <select name="producto_id" class="form-select" required>
-                        <% productos.forEach(p => { %>
-                          <option value="<%= p.id_producto %>" <%= p.id_producto === d.id_producto ? 'selected' : '' %>>
-                            <%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)
-                          </option>
-                        <% }) %>
-                      </select>
+    <!-- Formulario para agregar productos a la lista -->
+    <div class="col-md-5">
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Agregar Producto</h5>
+                <form id="form-agregar-item">
+                    <div class="mb-3">
+                        <label for="select-producto" class="form-label">Producto</label>
+                        <select id="select-producto" class="form-select" required>
+                            <option value="">Seleccione un producto...</option>
+                            <% productos.forEach(p => { %>
+                                <option value="<%= p.id %>" data-precio="<%= p.precio %>" data-stock="<%= p.stock %>">
+                                    <%= p.nombre %> - $<%= Number(p.precio).toFixed(2) %> (Stock: <%= p.stock %>)
+                                </option>
+                            <% }) %>
+                        </select>
                     </div>
-                    <div class="col-md-3">
-                      <input name="cantidad" type="number" min="1" class="form-control" value="<%= d.cantidad %>" required>
+                    <div class="mb-3">
+                        <label for="cantidad-item" class="form-label">Cantidad</label>
+                        <input type="number" id="cantidad-item" class="form-control" min="1" value="1" required>
                     </div>
-                    <div class="col-md-2">
-                      <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
-                        <i class="fas fa-times"></i>
-                      </button>
-                    </div>
-                  </div>
-                <% }) %>
-              <% } else { %>
-                <div class="row g-2 mb-2 linea">
-                  <div class="col-md-7">
-                    <select name="producto_id" class="form-select" required>
-                      <% productos.forEach(p => { %>
-                        <option value="<%= p.id_producto %>">
-                          <%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)
-                        </option>
-                      <% }) %>
-                    </select>
-                  </div>
-                  <div class="col-md-3">
-                    <input name="cantidad" type="number" min="1" class="form-control" value="1" required>
-                  </div>
-                  <div class="col-md-2">
-                    <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
-                      <i class="fas fa-times"></i>
-                    </button>
-                  </div>
-                </div>
-              <% } %>
+                    <button type="button" id="btn-agregar" class="btn btn-secondary w-100">Agregar a la Lista</button>
+                </form>
             </div>
-            <button type="button" class="btn btn-modern-outline mt-2" onclick="agregarLinea()">
-              <i class="fas fa-plus me-1"></i> Agregar producto
-            </button>
-          </div>
-
-          <hr>
-
-          <!-- Tipo de pago -->
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold">
-                <i class="fas fa-credit-card me-2 text-muted"></i>Tipo de pago
-              </label>
-              <select name="tipo_pago" id="tipo_pago" class="form-select" onchange="toggleEfectivo()">
-                <option value="efectivo">💰 Efectivo</option>
-                <option value="pago_móvil">📱 Pago móvil</option>
-              </select>
-            </div>
-            <div class="col-md-6" id="area_efectivo">
-              <label class="form-label fw-semibold">
-                <i class="fas fa-money-bill-wave me-2 text-muted"></i>Monto recibido
-              </label>
-              <input name="monto_recibido" id="monto_recibido" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
-            </div>
-          </div>
-
-          <hr>
-
-          <div class="d-flex gap-2">
-            <button class="btn btn-modern-primary px-4" type="submit">
-              <i class="fas fa-save me-2"></i> Procesar Venta
-            </button>
-            <a class="btn btn-modern-outline" href="/ventas">
-              <i class="fas fa-times me-1"></i> Cancelar
-            </a>
-          </div>
-        </form>
-      </div>
+        </div>
     </div>
-  </div>
+
+    <!-- Tabla de items cargados y resumen de pago -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Detalle de la Venta</h5>
+                <table class="table table-striped" id="tabla-items">
+                    <thead>
+                        <tr>
+                            <th>Producto</th>
+                            <th>Precio Unit.</th>
+                            <th>Cantidad</th>
+                            <th>Subtotal</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lista-items">
+                        <!-- Se llena dinámicamente con JS -->
+                    </tbody>
+                </table>
+
+                <hr>
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h4>Total General:</h4>
+                    <h3 class="text-success">$<span id="total-venta">0.00</span></h3>
+                </div>
+
+                <form id="form-venta" action="/ventas" method="POST">
+                    <!-- Input oculto para enviar los items en JSON -->
+                    <input type="hidden" name="items" id="input-items">
+
+                    <div class="mb-3">
+                        <label for="monto_pagado" class="form-label">Monto Recibido</label>
+                        <input type="number" step="0.01" min="0" id="monto_pagado" class="form-control" placeholder="Ingrese el monto entregado por el cliente" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-lg w-100">Vender</button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
-<script>
-  function agregarLinea() {
-    const cont = document.getElementById('lineas-productos');
-    const linea = document.createElement('div');
-    linea.className = 'row g-2 mb-2 linea';
-    linea.innerHTML = `
-      <div class="col-md-7">
-        <select name="producto_id" class="form-select" required>
-          <% productos.forEach(p => { %>
-            <option value="<%= p.id_producto %>"><%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)</option>
-          <% }) %>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <input name="cantidad" type="number" min="1" class="form-control" value="1" required>
-      </div>
-      <div class="col-md-2">
-        <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-    `;
-    cont.appendChild(linea);
-  }
-
-  function toggleEfectivo() {
-    const tipo = document.getElementById('tipo_pago').value;
-    document.getElementById('area_efectivo').style.display = tipo === 'efectivo' ? 'block' : 'none';
-  }
-  toggleEfectivo();
-
-  function validarVenta(form) {
-    const cantidades = Array.from(form.querySelectorAll('input[name="cantidad"]'));
-    for (const c of cantidades) {
-      if (Number(c.value) <= 0) {
-        alert('Cantidad inválida');
-        return false;
-      }
-    }
-    if (form.tipo_pago.value === 'efectivo') {
-      const monto = form.monto_recibido.value;
-      if (monto && Number(monto) < 0) {
-        alert('Monto recibido inválido');
-        return false;
-      }
-    }
-    return true;
-  }
-</script>
+<!-- Modal Flotante para Notificar el Vuelto -->
+<div class="modal fade" id="modalVuelto" tabindex="-1" aria-labelledby="modalVueltoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content text-center">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="modalVueltoLabel">Venta Exitosa</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-4">
+                <p class="fs-4 mb-2" id="mensaje-vuelto"></p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-primary" id="btn-confirmar-finalizar">Aceptar y Finalizar</button>
+            </div>
+        </div>
+    </div>
+</div>
