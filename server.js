@@ -149,7 +149,6 @@ app.get('/productos/nuevo', requiereLogin, (req, res) => {
 });
 
 app.post('/productos', requiereLogin, (req, res) => {
-  // Cajero puede crear, admin también
   const { nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, fecha_vencimiento } = req.body;
   if (!nombre || Number(stock_total) < 0) {
     const categorias = db.prepare('SELECT * FROM Categorias').all();
@@ -172,7 +171,6 @@ app.get('/productos/:id/editar', requiereLogin, (req, res) => {
 });
 
 app.post('/productos/:id/editar', requiereLogin, (req, res) => {
-  // Solo admin puede editar
   if (req.session.usuario.rol !== 'admin') {
     return res.status(403).send('Solo admin puede editar productos.');
   }
@@ -187,7 +185,6 @@ app.post('/productos/:id/editar', requiereLogin, (req, res) => {
 });
 
 app.post('/productos/:id/eliminar', requiereLogin, (req, res) => {
-  // Solo admin puede eliminar
   if (req.session.usuario.rol !== 'admin') {
     return res.status(403).send('Solo admin puede eliminar productos.');
   }
@@ -195,7 +192,7 @@ app.post('/productos/:id/eliminar', requiereLogin, (req, res) => {
   res.redirect('/productos');
 });
 
-// --- Rutas Lotes (CRUD mínimo) ---
+// --- Rutas Lotes (CRUD) ---
 app.get('/lotes', requiereLogin, (req, res) => {
   const lotes = db.prepare(`
     SELECT l.*, p.nombre AS producto_nombre
@@ -207,36 +204,51 @@ app.get('/lotes', requiereLogin, (req, res) => {
 
 app.get('/lotes/nuevo', requiereLogin, (req, res) => {
   const productos = db.prepare('SELECT * FROM Productos').all();
- return res.render('venta_form', { productos, error: 'Agregue al menos un producto.', venta: null, detalles: [] });
+  res.render('lote_form', { lote: null, productos, error: null });
 });
 
-app.post('/lotes/nuevo', async (req, res) => {
+app.post('/lotes/nuevo', requiereLogin, (req, res) => {
   try {
-    // Extraer variables desde el formulario
-    const { producto_id, cantidad, fecha_vencimiento, precio_compra } = req.body;
+    const { id_producto, cantidad, precio_compra, precio_venta, fecha_vencimiento } = req.body;
 
-    // Validación básica de campos requeridos
-    if (!producto_id || !cantidad) {
-      return res.status(400).send('Faltan campos obligatorios');
+    if (!id_producto || !cantidad || Number(cantidad) <= 0) {
+      const productos = db.prepare('SELECT * FROM Productos').all();
+      return res.render('lote_form', { lote: null, productos, error: 'Debe seleccionar un producto y una cantidad válida.' });
     }
 
-    // Consulta de inserción (SQLite / PostgreSQL)
-    const sql = `
-      INSERT INTO lotes (producto_id, cantidad, fecha_vencimiento, precio_compra)
-      VALUES (?, ?, ?, ?)
-    `;
-    
-    await db.run(sql, [producto_id, cantidad, fecha_vencimiento || null, precio_compra || 0]);
+    const fechaIngreso = new Date().toISOString().slice(0, 10);
+    const isoFechaVenc = fechaAValid(fecha_vencimiento);
+    const cant = Number(cantidad);
 
+    const registrarLoteTx = db.transaction(() => {
+      // Insertar nuevo lote
+      db.prepare(`
+        INSERT INTO Lotes (id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id_producto,
+        cant,
+        cant,
+        Number(precio_compra || 0),
+        Number(precio_venta || 0),
+        fechaIngreso,
+        isoFechaVenc
+      );
+
+      // Incrementar el stock_total del producto correspondientemente
+      db.prepare(`UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?`).run(cant, id_producto);
+    });
+
+    registrarLoteTx();
     res.redirect('/lotes');
   } catch (error) {
     console.error('Error al registrar lote:', error);
-    res.status(500).send('Error interno del servidor al procesar el lote.');
+    const productos = db.prepare('SELECT * FROM Productos').all();
+    res.render('lote_form', { lote: null, productos, error: 'Error al procesar el lote: ' + error.message });
   }
 });
 
 app.get('/lotes/:id/editar', requiereLogin, (req, res) => {
-  // Solo admin puede editar lotes
   if (req.session.usuario.rol !== 'admin') {
     return res.status(403).send('Solo admin puede editar lotes.');
   }
@@ -260,7 +272,7 @@ app.post('/lotes/:id/editar', requiereLogin, (req, res) => {
   res.redirect('/lotes');
 });
 
-// --- Rutas Usuarios (listar y crear, solo admin listar) ---
+// --- Rutas Usuarios ---
 app.get('/usuarios', requiereLogin, requiereAdmin, (req, res) => {
   const usuarios = db.prepare('SELECT * FROM Usuarios').all();
   res.render('usuarios', { usuarios });
@@ -277,7 +289,6 @@ app.post('/usuarios', requiereLogin, requiereAdmin, (req, res) => {
 
 // --- Rutas Ventas ---
 app.get('/ventas', requiereLogin, (req, res) => {
-  // Admin puede ver todas las ventas; cajero solo las suyas
   let ventas;
   if (req.session.usuario.rol === 'admin') {
     ventas = db.prepare('SELECT v.*, u.nombre as usuario_nombre FROM Ventas v LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario ORDER BY v.fecha DESC').all();
@@ -289,14 +300,11 @@ app.get('/ventas', requiereLogin, (req, res) => {
 
 app.get('/ventas/nuevo', requiereLogin, (req, res) => {
   const productos = db.prepare('SELECT * FROM Productos').all();
-  // Pasamos detalles como array vacío para evitar ReferenceError en la plantilla
   res.render('venta_form', { productos, error: null, venta: null, detalles: [] });
 });
 
-// Función auxiliar: convierte un string dd/mm/yyyy a ISO; acepta ya ISO
 function fechaAValid(fechaDisplay) {
   if (!fechaDisplay) return null;
-  // Si viene con '/', asumimos dd/mm/yyyy
   if (fechaDisplay.includes('/')) {
     const parts = fechaDisplay.split('/');
     if (parts.length === 3) {
@@ -307,24 +315,18 @@ function fechaAValid(fechaDisplay) {
   return fechaDisplay;
 }
 
-// POST /ventas - registrar venta con lógica FIFO de lotes
+// POST /ventas - registrar venta con lógica FIFO
 app.post('/ventas', requiereLogin, (req, res) => {
-  // Esperamos: productos[] (ids), cantidades[], monto_recibido (opcional)
-  // En formularios dinámicos puede recibirse como valores individuales o arrays
   let { producto_id, cantidad, monto_recibido } = req.body;
 
-  // Normalizar a arrays
   if (!Array.isArray(producto_id)) producto_id = producto_id ? [producto_id] : [];
   if (!Array.isArray(cantidad)) cantidad = cantidad ? [cantidad] : [];
 
-  // Validaciones básicas
   if (producto_id.length === 0) {
     const productos = db.prepare('SELECT * FROM Productos').all();
-    return res.render('venta_form', { productos, error: 'Agregue al menos un producto.' });
+    return res.render('venta_form', { productos, error: 'Agregue al menos un producto.', venta: null, detalles: [] });
   }
 
-  // Preparar venta
-  // 1) Validar stock total por producto
   const lineas = [];
   for (let i = 0; i < producto_id.length; i++) {
     const idp = Number(producto_id[i]);
@@ -340,8 +342,7 @@ app.post('/ventas', requiereLogin, (req, res) => {
     lineas.push({ id_producto: idp, cantidad: qty, producto });
   }
 
-  // 2) Procesar cada línea con FIFO sobre lotes
-  const detallesParaInsertar = []; // {id_producto, id_lote, cantidad, precio_unitario}
+  const detallesParaInsertar = [];
   let totalVenta = 0;
   try {
     const insertarVenta = db.prepare('INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, ?, ?, ?, ?)');
@@ -351,99 +352,76 @@ app.post('/ventas', requiereLogin, (req, res) => {
 
     const fechaHoy = new Date().toISOString().slice(0,10);
 
-    // Empezar transacción (mejor-sqlite3 maneja transacciones vía transaction)
     const compruebaYRegistra = db.transaction(() => {
-      // Primero revisar todo y construir detalles
       for (const linea of lineas) {
         let restante = linea.cantidad;
-        // Obtener lotes FIFO del producto con cantidad_actual > 0
         const lotes = db.prepare('SELECT * FROM Lotes WHERE id_producto = ? AND cantidad_actual > 0 ORDER BY fecha_ingreso ASC').all(linea.id_producto);
         for (const lote of lotes) {
           if (restante <= 0) break;
           const uso = Math.min(restante, lote.cantidad_actual);
-          // precio unitario: preferir precio del lote, si es 0 usar precio_venta del producto
           const precioUnit = (lote.precio_venta && lote.precio_venta > 0) ? lote.precio_venta : (linea.producto.precio_venta || 0);
           detallesParaInsertar.push({ id_producto: linea.id_producto, id_lote: lote.id_lote, cantidad: uso, precio_unitario: precioUnit });
           restante -= uso;
         }
         if (restante > 0) {
-          throw new Error(`Stock insuficiente para el producto "${linea.producto.nombre}" al intentar asignar lotes (concurrencia).`);
+          throw new Error(`Stock insuficiente para el producto "${linea.producto.nombre}" al intentar asignar lotes.`);
         }
       }
 
-      // Calcular totalVenta
       for (const d of detallesParaInsertar) {
         totalVenta += d.cantidad * d.precio_unitario;
       }
 
-      // Insertar venta
       const res = insertarVenta.run(fechaHoy, totalVenta, monto_recibido ? Number(monto_recibido) : null, req.session.usuario.Id_usuario, 0);
       const idVenta = res.lastInsertRowid;
 
-      // Insertar detalle y actualizar lotes/productos
       for (const d of detallesParaInsertar) {
         insertarDetalle.run(idVenta, d.id_producto, d.id_lote, d.cantidad, d.precio_unitario);
-        // Reducir cantidad_actual del lote
         const loteActual = db.prepare('SELECT cantidad_actual FROM Lotes WHERE id_lote = ?').get(d.id_lote);
         const nuevaCantidad = loteActual.cantidad_actual - d.cantidad;
         actualizarLote.run(nuevaCantidad, d.id_lote);
-        // Reducir stock_total del producto
         actualizarProductoStock.run(d.cantidad, d.id_producto);
       }
 
       return idVenta;
     });
 
-    const idVentaCreada = compruebaYRegistra();
-    // Si pago es efectivo y monto_recibido está presente, retornamos al cliente para mostrar vuelto (frontend controla)
+    compruebaYRegistra();
     return res.redirect(`/ventas`);
   } catch (e) {
     return res.status(400).send('Error al registrar venta: ' + e.message);
   }
 });
 
-// GET /ventas/:id/editar - mostrar formulario para editar (restaurar y volver a aplicar)
 app.get('/ventas/:id/editar', requiereLogin, (req, res) => {
   const id = req.params.id;
   const venta = db.prepare('SELECT * FROM Ventas WHERE id_venta = ?').get(id);
   if (!venta) return res.redirect('/ventas');
   const detalles = db.prepare('SELECT dv.*, p.nombre as producto_nombre FROM Detalle_ventas dv JOIN Productos p ON dv.id_producto = p.id_producto WHERE dv.id_venta = ?').all(id);
   const productos = db.prepare('SELECT * FROM Productos').all();
-  res.render('venta_form', { productos, error: null, venta: null, detalles: [] });
+  res.render('venta_form', { productos, error: null, venta, detalles });
 });
 
-// POST /ventas/:id/editar - editar la venta (restaurar stock y reaplicar)
 app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
-  // Para editar, vamos a:
-  // 1) Recuperar detalles originales y restaurar stock_total y lotes
-  // 2) Eliminar detalles y actualizar venta (anotamos monto_recibido)
-  // 3) Procesar nuevas líneas como en creación
   const id = req.params.id;
   const venta = db.prepare('SELECT * FROM Ventas WHERE id_venta = ?').get(id);
   if (!venta) return res.status(404).send('Venta no encontrada.');
 
-  // Obtener detalles originales
   const detallesOriginales = db.prepare('SELECT * FROM Detalle_ventas WHERE id_venta = ?').all(id);
 
   try {
     const editarTransaccion = db.transaction(() => {
-      // Restaurar cada detalle
       for (const d of detallesOriginales) {
         if (d.id_lote) {
-          // Restaurar lote
           db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual + ? WHERE id_lote = ?').run(d.cantidad, d.id_lote);
         }
-        // Restaurar producto stock_total
         db.prepare('UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?').run(d.cantidad, d.id_producto);
       }
-      // Borrar detalles antiguos
       db.prepare('DELETE FROM Detalle_ventas WHERE id_venta = ?').run(id);
 
-      // Actualizar campo simple de la venta (monto_recibido si viene)
-      const {monto_recibido } = req.body;
+      const { monto_recibido } = req.body;
       db.prepare('UPDATE Ventas SET monto_recibido = ?, total = 0 WHERE id_venta = ?').run(monto_recibido ? Number(monto_recibido) : null, id);
 
-      // Ahora procesar las nuevas líneas (reusar lógica del POST /ventas)
       let { producto_id, cantidad } = req.body;
       if (!Array.isArray(producto_id)) producto_id = producto_id ? [producto_id] : [];
       if (!Array.isArray(cantidad)) cantidad = cantidad ? [cantidad] : [];
@@ -461,7 +439,6 @@ app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
         lineas.push({ id_producto: idp, cantidad: qty, producto });
       }
 
-      // Construir nuevos detalles con FIFO
       const nuevosDetalles = [];
       let nuevoTotal = 0;
       for (const linea of lineas) {
@@ -477,7 +454,6 @@ app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
         if (restante > 0) throw new Error(`Stock insuficiente para ${linea.producto.nombre} al reasignar lotes.`);
       }
 
-      // Insertar nuevos detalles y actualizar lotes/productos
       for (const d of nuevosDetalles) {
         db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, ?, ?, ?)').run(id, d.id_producto, d.id_lote, d.cantidad, d.precio_unitario);
         db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual - ? WHERE id_lote = ?').run(d.cantidad, d.id_lote);
@@ -485,7 +461,6 @@ app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
         nuevoTotal += d.cantidad * d.precio_unitario;
       }
 
-      // Actualizar total de la venta
       db.prepare('UPDATE Ventas SET total = ? WHERE id_venta = ?').run(nuevoTotal, id);
 
       return true;
@@ -498,7 +473,6 @@ app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
   }
 });
 
-// POST /ventas/:id/anular - anular (revertir) venta
 app.post('/ventas/:id/anular', requiereLogin, (req, res) => {
   const id = req.params.id;
   const venta = db.prepare('SELECT * FROM Ventas WHERE id_venta = ?').get(id);
@@ -509,14 +483,12 @@ app.post('/ventas/:id/anular', requiereLogin, (req, res) => {
 
   try {
     const anularTx = db.transaction(() => {
-      // Restaurar lotes y productos
       for (const d of detalles) {
         if (d.id_lote) {
           db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual + ? WHERE id_lote = ?').run(d.cantidad, d.id_lote);
         }
         db.prepare('UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?').run(d.cantidad, d.id_producto);
       }
-      // Marcar venta anulada
       db.prepare('UPDATE Ventas SET anulada = 1 WHERE id_venta = ?').run(id);
     });
     anularTx();
@@ -531,7 +503,6 @@ app.get('/export/productos', requiereLogin, requiereAdmin, (req, res) => {
   const productos = db.prepare(`
     SELECT p.*, c.nombre as categoria_nombre FROM Productos p LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
   `).all();
-  // Construir CSV
   let csv = 'id_producto,nombre,codigo,categoria,stock_total,stock_minimo,precio_venta,fecha_vencimiento\n';
   for (const p of productos) {
     csv += `${p.id_producto},"${p.nombre}","${p.codigo || ''}","${p.categoria_nombre || ''}",${p.stock_total},${p.stock_minimo},${p.precio_venta || 0},"${p.fecha_vencimiento || ''}"\n`;
@@ -542,7 +513,6 @@ app.get('/export/productos', requiereLogin, requiereAdmin, (req, res) => {
 });
 
 app.get('/export/ventas', requiereLogin, requiereAdmin, (req, res) => {
-  // Listado de ventas con detalles básicos
   const ventas = db.prepare('SELECT v.*, u.nombre as usuario FROM Ventas v LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario ORDER BY v.fecha DESC').all();
   let csv = 'id_venta,fecha,total,monto_recibido,usuario,anulada\n';
   for (const v of ventas) {
@@ -560,10 +530,8 @@ app.get('/api/productos/buscar', requiereLogin, (req, res) => {
   res.json(filas);
 });
 
-// --- Páginas mínimas adicionales ---
-
 // Ruta para ver los Reportes
-app.get('/reportes', async (req, res) => {
+app.get('/reportes', requiereLogin, async (req, res) => {
     try {
         res.render('reportes');
     } catch (error) {
