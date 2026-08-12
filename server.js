@@ -316,80 +316,73 @@ function fechaAValid(fechaDisplay) {
 }
 
 // POST /ventas - registrar venta con lógica FIFO
-app.post('/ventas', requiereLogin, (req, res) => {
-  let { producto_id, cantidad, monto_recibido } = req.body;
+// server.js (Sección correspondiente a la ruta POST de ventas)
 
-  if (!Array.isArray(producto_id)) producto_id = producto_id ? [producto_id] : [];
-  if (!Array.isArray(cantidad)) cantidad = cantidad ? [cantidad] : [];
+app.post('/ventas', async (req, res) => {
+  const { cliente, productos } = req.body; // productos: [{ producto_id, lote_id, cantidad, precio_unitario }]
 
-  if (producto_id.length === 0) {
-    const productos = db.prepare('SELECT * FROM Productos').all();
-    return res.render('venta_form', { productos, error: 'Agregue al menos un producto.', venta: null, detalles: [] });
+  if (!productos || !Array.isArray(productos) || productos.length === 0) {
+    return res.status(400).json({ error: 'Debe incluir al menos un producto en la venta.' });
   }
 
-  const lineas = [];
-  for (let i = 0; i < producto_id.length; i++) {
-    const idp = Number(producto_id[i]);
-    const qty = Number(cantidad[i]);
-    if (!idp || qty <= 0) {
-      return res.status(400).send('Cantidad inválida para un producto.');
-    }
-    const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(idp);
-    if (!producto) return res.status(400).send('Producto no encontrado.');
-    if (producto.stock_total < qty) {
-      return res.status(400).send(`No hay suficiente stock del producto "${producto.nombre}". Stock disponible: ${producto.stock_total}`);
-    }
-    lineas.push({ id_producto: idp, cantidad: qty, producto });
-  }
+  // Iniciar transacción en la base de datos
+  const db = require('./db');
 
-  const detallesParaInsertar = [];
-  let totalVenta = 0;
   try {
-    const insertarVenta = db.prepare('INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, ?, ?, ?, ?)');
-    const insertarDetalle = db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, ?, ?, ?)');
-    const actualizarLote = db.prepare('UPDATE Lotes SET cantidad_actual = ? WHERE id_lote = ?');
-    const actualizarProductoStock = db.prepare('UPDATE Productos SET stock_total = stock_total - ? WHERE id_producto = ?');
+    await db.query('BEGIN TRANSACTION');
 
-    const fechaHoy = new Date().toISOString().slice(0,10);
+    // 1. Insertar el encabezado de la venta
+    const resultVenta = await db.query(
+      'INSERT INTO ventas (cliente, fecha, total) VALUES (?, DATETIME("now"), ?)',
+      [cliente || 'Cliente General', 0]
+    );
+    const ventaId = resultVenta.lastID;
 
-    const compruebaYRegistra = db.transaction(() => {
-      for (const linea of lineas) {
-        let restante = linea.cantidad;
-        const lotes = db.prepare('SELECT * FROM Lotes WHERE id_producto = ? AND cantidad_actual > 0 ORDER BY fecha_ingreso ASC').all(linea.id_producto);
-        for (const lote of lotes) {
-          if (restante <= 0) break;
-          const uso = Math.min(restante, lote.cantidad_actual);
-          const precioUnit = (lote.precio_venta && lote.precio_venta > 0) ? lote.precio_venta : (linea.producto.precio_venta || 0);
-          detallesParaInsertar.push({ id_producto: linea.id_producto, id_lote: lote.id_lote, cantidad: uso, precio_unitario: precioUnit });
-          restante -= uso;
-        }
-        if (restante > 0) {
-          throw new Error(`Stock insuficiente para el producto "${linea.producto.nombre}" al intentar asignar lotes.`);
-        }
+    let totalVenta = 0;
+
+    // 2. Procesar cada producto de la venta
+    for (const item of productos) {
+      const { producto_id, lote_id, cantidad, precio_unitario } = item;
+
+      // Verificar que haya suficiente stock en el lote o producto
+      let stockQuery = 'SELECT cantidad FROM lotes WHERE id = ?';
+      let stockResult = await db.query(stockQuery, [lote_id]);
+
+      if (!stockResult || stockResult.length === 0 || stockResult[0].cantidad < cantidad) {
+        throw new Error(`Stock insuficiente para el producto ID ${producto_id} en el lote seleccionado.`);
       }
 
-      for (const d of detallesParaInsertar) {
-        totalVenta += d.cantidad * d.precio_unitario;
-      }
+      // Actualizar el stock del lote
+      await db.query(
+        'UPDATE lotes SET cantidad = cantidad - ? WHERE id = ?',
+        [cantidad, lote_id]
+      );
 
-      const res = insertarVenta.run(fechaHoy, totalVenta, monto_recibido ? Number(monto_recibido) : null, req.session.usuario.Id_usuario, 0);
-      const idVenta = res.lastInsertRowid;
+      // Registrar el detalle de la venta
+      const subtotal = cantidad * precio_unitario;
+      totalVenta += subtotal;
 
-      for (const d of detallesParaInsertar) {
-        insertarDetalle.run(idVenta, d.id_producto, d.id_lote, d.cantidad, d.precio_unitario);
-        const loteActual = db.prepare('SELECT cantidad_actual FROM Lotes WHERE id_lote = ?').get(d.id_lote);
-        const nuevaCantidad = loteActual.cantidad_actual - d.cantidad;
-        actualizarLote.run(nuevaCantidad, d.id_lote);
-        actualizarProductoStock.run(d.cantidad, d.id_producto);
-      }
+      await db.query(
+        'INSERT INTO detalle_ventas (venta_id, producto_id, lote_id, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)',
+        [ventaId, producto_id, lote_id, cantidad, precio_unitario, subtotal]
+      );
+    }
 
-      return idVenta;
+    // 3. Actualizar el total de la venta
+    await db.query('UPDATE ventas SET total = ? WHERE id = ?', [totalVenta, ventaId]);
+
+    // Confirmar transacción
+    await db.query('COMMIT');
+
+    res.redirect('/ventas');
+  } catch (error) {
+    // Revertir cambios si ocurre un error
+    await db.query('ROLLBACK');
+    console.error('Error al registrar la venta:', error.message);
+    res.status(500).render('venta_form', {
+      error: 'Error interno del sistema al procesar la venta: ' + error.message,
+      title: 'Registrar Venta'
     });
-
-    compruebaYRegistra();
-    return res.redirect(`/ventas`);
-  } catch (e) {
-    return res.status(400).send('Error al registrar venta: ' + e.message);
   }
 });
 
