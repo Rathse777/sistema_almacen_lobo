@@ -21,6 +21,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
 // Depuración: verificar que la carpeta views existe
 console.log('Carpeta views:', path.join(__dirname, 'views'));
@@ -209,24 +210,29 @@ app.get('/lotes/nuevo', requiereLogin, (req, res) => {
  return res.render('venta_form', { productos, error: 'Agregue al menos un producto.', venta: null, detalles: [] });
 });
 
-app.post('/lotes', requiereLogin, (req, res) => {
-  // Cajero puede crear lotes también (requisito)
-  const { id_producto, cantidad_inicial, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento } = req.body;
-  if (!id_producto || Number(cantidad_inicial) <= 0) {
-    const productos = db.prepare('SELECT * FROM Productos').all();
-    return res.render('lote_form', { lote: null, productos, error: 'Campos obligatorios o inválidos.' });
+app.post('/lotes/nuevo', async (req, res) => {
+  try {
+    // Extraer variables desde el formulario
+    const { producto_id, cantidad, fecha_vencimiento, precio_compra } = req.body;
+
+    // Validación básica de campos requeridos
+    if (!producto_id || !cantidad) {
+      return res.status(400).send('Faltan campos obligatorios');
+    }
+
+    // Consulta de inserción (SQLite / PostgreSQL)
+    const sql = `
+      INSERT INTO lotes (producto_id, cantidad, fecha_vencimiento, precio_compra)
+      VALUES (?, ?, ?, ?)
+    `;
+    
+    await db.run(sql, [producto_id, cantidad, fecha_vencimiento || null, precio_compra || 0]);
+
+    res.redirect('/lotes');
+  } catch (error) {
+    console.error('Error al registrar lote:', error);
+    res.status(500).send('Error interno del servidor al procesar el lote.');
   }
-  const fechaIngresoIso = fechaAValid(fecha_ingreso) || new Date().toISOString().slice(0,10);
-  const fechaVencIso = fechaAValid(fecha_vencimiento);
-  const cantidad = Number(cantidad_inicial);
-  const resInsert = db.prepare(`INSERT INTO Lotes
-    (id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(id_producto, cantidad, cantidad, Number(precio_compra || 0), Number(precio_venta || 0), fechaIngresoIso, fechaVencIso);
-
-  // Actualizar stock_total del producto sumando la cantidad
-  db.prepare('UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?').run(cantidad, id_producto);
-
-  res.redirect('/lotes');
 });
 
 app.get('/lotes/:id/editar', requiereLogin, (req, res) => {
@@ -303,9 +309,9 @@ function fechaAValid(fechaDisplay) {
 
 // POST /ventas - registrar venta con lógica FIFO de lotes
 app.post('/ventas', requiereLogin, (req, res) => {
-  // Esperamos: productos[] (ids), cantidades[], tipo_pago, monto_recibido (opcional)
+  // Esperamos: productos[] (ids), cantidades[], monto_recibido (opcional)
   // En formularios dinámicos puede recibirse como valores individuales o arrays
-  let { producto_id, cantidad, tipo_pago, monto_recibido } = req.body;
+  let { producto_id, cantidad, monto_recibido } = req.body;
 
   // Normalizar a arrays
   if (!Array.isArray(producto_id)) producto_id = producto_id ? [producto_id] : [];
@@ -338,7 +344,7 @@ app.post('/ventas', requiereLogin, (req, res) => {
   const detallesParaInsertar = []; // {id_producto, id_lote, cantidad, precio_unitario}
   let totalVenta = 0;
   try {
-    const insertarVenta = db.prepare('INSERT INTO Ventas (fecha, total, tipo_pago, monto_recibido, id_usuario, anulada) VALUES (?, ?, ?, ?, ?, ?)');
+    const insertarVenta = db.prepare('INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, ?, ?, ?, ?)');
     const insertarDetalle = db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, ?, ?, ?)');
     const actualizarLote = db.prepare('UPDATE Lotes SET cantidad_actual = ? WHERE id_lote = ?');
     const actualizarProductoStock = db.prepare('UPDATE Productos SET stock_total = stock_total - ? WHERE id_producto = ?');
@@ -371,7 +377,7 @@ app.post('/ventas', requiereLogin, (req, res) => {
       }
 
       // Insertar venta
-      const res = insertarVenta.run(fechaHoy, totalVenta, tipo_pago, monto_recibido ? Number(monto_recibido) : null, req.session.usuario.Id_usuario, 0);
+      const res = insertarVenta.run(fechaHoy, totalVenta, monto_recibido ? Number(monto_recibido) : null, req.session.usuario.Id_usuario, 0);
       const idVenta = res.lastInsertRowid;
 
       // Insertar detalle y actualizar lotes/productos
@@ -410,7 +416,7 @@ app.get('/ventas/:id/editar', requiereLogin, (req, res) => {
 app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
   // Para editar, vamos a:
   // 1) Recuperar detalles originales y restaurar stock_total y lotes
-  // 2) Eliminar detalles y actualizar venta (anotamos nuevo tipo_pago y monto_recibido)
+  // 2) Eliminar detalles y actualizar venta (anotamos monto_recibido)
   // 3) Procesar nuevas líneas como en creación
   const id = req.params.id;
   const venta = db.prepare('SELECT * FROM Ventas WHERE id_venta = ?').get(id);
@@ -433,9 +439,9 @@ app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
       // Borrar detalles antiguos
       db.prepare('DELETE FROM Detalle_ventas WHERE id_venta = ?').run(id);
 
-      // Actualizar campos simples de la venta (tipo_pago y monto_recibido si vienen)
-      const { tipo_pago, monto_recibido } = req.body;
-      db.prepare('UPDATE Ventas SET tipo_pago = ?, monto_recibido = ?, total = 0 WHERE id_venta = ?').run(tipo_pago, monto_recibido ? Number(monto_recibido) : null, id);
+      // Actualizar campo simple de la venta (monto_recibido si viene)
+      const {monto_recibido } = req.body;
+      db.prepare('UPDATE Ventas SET monto_recibido = ?, total = 0 WHERE id_venta = ?').run(monto_recibido ? Number(monto_recibido) : null, id);
 
       // Ahora procesar las nuevas líneas (reusar lógica del POST /ventas)
       let { producto_id, cantidad } = req.body;
@@ -538,9 +544,9 @@ app.get('/export/productos', requiereLogin, requiereAdmin, (req, res) => {
 app.get('/export/ventas', requiereLogin, requiereAdmin, (req, res) => {
   // Listado de ventas con detalles básicos
   const ventas = db.prepare('SELECT v.*, u.nombre as usuario FROM Ventas v LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario ORDER BY v.fecha DESC').all();
-  let csv = 'id_venta,fecha,total,tipo_pago,monto_recibido,usuario,anulada\n';
+  let csv = 'id_venta,fecha,total,monto_recibido,usuario,anulada\n';
   for (const v of ventas) {
-    csv += `${v.id_venta},${v.fecha},${v.total},${v.tipo_pago},${v.monto_recibido || ''},"${v.usuario || ''}",${v.anulada}\n`;
+    csv += `${v.id_venta},${v.fecha},${v.total},${v.monto_recibido || ''},"${v.usuario || ''}",${v.anulada}\n`;
   }
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=ventas.csv');
@@ -554,10 +560,28 @@ app.get('/api/productos/buscar', requiereLogin, (req, res) => {
   res.json(filas);
 });
 
-// --- Páginas mínimas adicionales (vistas con mensajes en español) ---
+// --- Páginas mínimas adicionales ---
 
-// Rutas para renderizar plantilla de categorias/productos vistas simples
-// Las vistas EJS están en /views y muestran formularios sencillos (ver archivos).
+// Ruta para ver el Historial
+app.get('/historial', async (req, res) => {
+    try {
+        // Ejecuta la consulta SQL correspondiente si requieres datos
+        res.render('historial'); // Asegúrate de tener vistas/historial.ejs
+    } catch (error) {
+        console.error('Error al cargar historial:', error);
+        res.status(500).send('Error interno del servidor');
+    }
+});
+
+// Ruta para ver los Reportes
+app.get('/reportes', async (req, res) => {
+    try {
+        res.render('reportes'); // Asegúrate de tener vistas/reportes.ejs
+    } catch (error) {
+        console.error('Error al cargar reportes:', error);
+        res.status(500).send('Error interno del servidor');
+    }
+});
 
 // Inicio del servidor
 app.listen(PORT, () => {
