@@ -562,21 +562,10 @@ app.get('/api/productos/buscar', requiereLogin, (req, res) => {
 
 // --- Páginas mínimas adicionales ---
 
-// Ruta para ver el Historial
-app.get('/historial', async (req, res) => {
-    try {
-        // Ejecuta la consulta SQL correspondiente si requieres datos
-        res.render('historial'); // Asegúrate de tener vistas/historial.ejs
-    } catch (error) {
-        console.error('Error al cargar historial:', error);
-        res.status(500).send('Error interno del servidor');
-    }
-});
-
 // Ruta para ver los Reportes
 app.get('/reportes', async (req, res) => {
     try {
-        res.render('reportes'); // Asegúrate de tener vistas/reportes.ejs
+        res.render('reportes');
     } catch (error) {
         console.error('Error al cargar reportes:', error);
         res.status(500).send('Error interno del servidor');
