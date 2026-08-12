@@ -1,0 +1,88 @@
+<% layout('layout') -%>
+<% title = 'Categorías' %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
+      <i class="fas fa-tags me-2 text-primary"></i>Gestión de Categorías
+    </h2>
+    <p class="text-muted" style="font-size: 0.9rem;">Organiza tus productos por categorías</p>
+  </div>
+  <div>
+    <a class="btn btn-modern-success" href="/categorias/nuevo">
+      <i class="fas fa-plus me-2"></i> Nueva Categoría
+    </a>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-plus-circle me-2"></i> Nueva Categoría
+      </div>
+      <div class="card-body">
+        <form method="POST" action="/categorias">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nombre Categoría</label>
+            <input name="nombre" class="form-control" placeholder="Ej: Abarrotes, Bebidas..." required>
+          </div>
+          <button class="btn btn-modern-primary w-100">
+            <i class="fas fa-save me-2"></i> Guardar Categoría
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-list me-2"></i> Listado de Categorías
+        <span class="badge bg-secondary rounded-pill ms-2"><%= categorias ? categorias.length : 0 %></span>
+      </div>
+      <div class="card-body p-0">
+        <% if (!categorias || categorias.length === 0) { %>
+          <div class="text-center py-4">
+            <i class="fas fa-tag text-muted" style="font-size: 2rem;"></i>
+            <p class="text-muted mt-2 mb-0">No hay categorías registradas</p>
+          </div>
+        <% } else { %>
+          <div class="table-responsive">
+            <table class="table table-modern mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre Categoría</th>
+                  <th class="text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% categorias.forEach(c => { %>
+                  <tr>
+                    <td><span class="badge bg-secondary bg-opacity-10 text-dark fw-normal">#<%= c.id_categoria %></span></td>
+                    <td><strong><%= c.nombre %></strong></td>
+                    <td class="text-center">
+                      <button class="btn btn-sm btn-modern-danger" onclick="eliminarCategoria('<%= c.id_categoria %>')" title="Eliminar">
+                        <i class="fas fa-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function eliminarCategoria(id) {
+    if (confirm('¿Eliminar esta categoría?')) {
+      // Si no hay endpoint de eliminación, mostrar mensaje
+      alert('Función de eliminación disponible para administradores');
+    }
+  }
+</script>

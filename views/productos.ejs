@@ -1,0 +1,91 @@
+<% layout('layout') -%>
+<% title = 'Productos' %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
+      <i class="fas fa-boxes me-2 text-primary"></i>Catálogo de Productos
+    </h2>
+    <p class="text-muted" style="font-size: 0.9rem;">Gestiona el inventario de productos</p>
+  </div>
+  <div>
+    <a class="btn btn-modern-success" href="/productos/nuevo">
+      <i class="fas fa-plus me-2"></i> Registrar Producto
+    </a>
+  </div>
+</div>
+
+<!-- Barra de búsqueda -->
+<div class="search-bar mb-4">
+  <i class="fas fa-search search-icon"></i>
+  <input type="text" id="searchProducto" class="form-control" placeholder="Buscar por nombre o código..." onkeyup="filtrarProductos()">
+</div>
+
+<div class="card-modern">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-modern mb-0" id="tablaProductos">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Producto</th>
+            <th>Categoría</th>
+            <th class="text-center">Stock</th>
+            <th class="text-end">Precio</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% productos.forEach(p => { %>
+            <tr class="producto-row">
+              <td><span class="badge bg-secondary bg-opacity-10 text-dark fw-normal"><%= p.codigo || '--' %></span></td>
+              <td>
+                <strong><%= p.nombre %></strong>
+                <% if (p.descripcion) { %>
+                  <br><small class="text-muted"><%= p.descripcion %></small>
+                <% } %>
+              </td>
+              <td><span class="badge bg-light text-dark fw-normal"><%= p.categoria_nombre || 'Sin categoría' %></span></td>
+              <td class="text-center">
+                <% if (p.stock_total <= 5 && p.stock_total > 0) { %>
+                  <span class="badge badge-stock-low"><i class="fas fa-exclamation-triangle me-1"></i><%= p.stock_total %></span>
+                <% } else if (p.stock_total === 0) { %>
+                  <span class="badge bg-danger text-white"><i class="fas fa-times me-1"></i>Agotado</span>
+                <% } else { %>
+                  <span class="badge badge-stock-ok"><%= p.stock_total %></span>
+                <% } %>
+              </td>
+              <td class="text-end fw-semibold"><%= formatoMoneda(p.precio_venta) %></td>
+              <td class="text-center">
+                <a class="btn btn-sm btn-modern-outline" href="/productos/<%= p.id_producto %>/editar" title="Editar">
+                  <i class="fas fa-edit"></i>
+                </a>
+                <% if (usuario.rol === 'admin') { %>
+                  <form style="display:inline" method="POST" action="/productos/<%= p.id_producto %>/eliminar" 
+                        onsubmit="return confirm('¿Confirmar eliminar producto?')">
+                    <button class="btn btn-sm btn-modern-danger" title="Eliminar">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function filtrarProductos() {
+    const input = document.getElementById('searchProducto');
+    const filter = input.value.toLowerCase();
+    const rows = document.querySelectorAll('.producto-row');
+    
+    rows.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(filter) ? '' : 'none';
+    });
+  }
+</script>

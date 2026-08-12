@@ -1,0 +1,313 @@
+/* ========================================
+   ESTILOS MODERNOS - SISTEMA LOBO
+   ======================================== */
+
+/* === RESET & BASE === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a2e;
+  min-height: 100vh;
+}
+
+/* === CARDS MODERNAS === */
+.card-modern {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8ecf1;
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.card-modern:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.10);
+}
+
+.card-modern .card-header {
+  background: transparent;
+  border-bottom: 1px solid #eef0f3;
+  padding: 1.25rem 1.5rem;
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #1a1a2e;
+}
+
+.card-modern .card-body {
+  padding: 1.5rem;
+}
+
+/* === TABLAS === */
+.table-modern {
+  font-size: 0.9rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table-modern thead th {
+  background: #f7f8fa;
+  color: #4a4a6a;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid #e8ecf1;
+}
+
+.table-modern tbody td {
+  padding: 0.85rem 1rem;
+  vertical-align: middle;
+  border-bottom: 1px solid #eef0f3;
+}
+
+.table-modern tbody tr:hover {
+  background: #f8f9fc;
+}
+
+.table-modern tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* === BOTONES === */
+.btn-modern {
+  border-radius: 8px;
+  font-weight: 500;
+  padding: 0.5rem 1.25rem;
+  transition: all 0.2s ease;
+  font-size: 0.875rem;
+}
+
+.btn-modern-primary {
+  background: linear-gradient(135deg, #e94560, #c23152);
+  border: none;
+  color: white;
+}
+
+.btn-modern-primary:hover {
+  background: linear-gradient(135deg, #c23152, #a02845);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(233, 69, 96, 0.35);
+}
+
+.btn-modern-success {
+  background: linear-gradient(135deg, #00b894, #00a381);
+  border: none;
+  color: white;
+}
+
+.btn-modern-success:hover {
+  background: linear-gradient(135deg, #00a381, #00856a);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(0, 184, 148, 0.35);
+}
+
+.btn-modern-danger {
+  background: linear-gradient(135deg, #e17055, #d63031);
+  border: none;
+  color: white;
+}
+
+.btn-modern-danger:hover {
+  background: linear-gradient(135deg, #d63031, #b71c1c);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.btn-modern-outline {
+  background: transparent;
+  border: 1.5px solid #dce1e8;
+  color: #4a4a6a;
+}
+
+.btn-modern-outline:hover {
+  background: #f7f8fa;
+  border-color: #b0b8c4;
+}
+
+/* === FORMULARIOS === */
+.form-modern {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.5rem;
+  border: 1px solid #e8ecf1;
+}
+
+.form-modern .form-label {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: #4a4a6a;
+  margin-bottom: 0.4rem;
+}
+
+.form-modern .form-control,
+.form-modern .form-select {
+  border-radius: 10px;
+  border: 1.5px solid #dce1e8;
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  background: #fafbfc;
+}
+
+.form-modern .form-control:focus,
+.form-modern .form-select:focus {
+  border-color: #e94560;
+  box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.12);
+  background: white;
+}
+
+/* === BADGES === */
+.badge-modern {
+  padding: 0.35rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.3px;
+}
+
+.badge-stock-low {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-stock-ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-vencido {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-vencimiento {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* === ALERTAS === */
+.alert-modern {
+  border-radius: 12px;
+  border: none;
+  padding: 1rem 1.25rem;
+}
+
+.alert-modern-danger {
+  background: #fef2f2;
+  border-left: 4px solid #dc2626;
+  color: #991b1b;
+}
+
+.alert-modern-warning {
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  color: #92400e;
+}
+
+.alert-modern-success {
+  background: #f0fdf4;
+  border-left: 4px solid #22c55e;
+  color: #166534;
+}
+
+/* === DASHBOARD CARDS === */
+.dashboard-card {
+  background: white;
+  border-radius: 16px;
+  padding: 1.5rem;
+  border: 1px solid #e8ecf1;
+  transition: all 0.2s ease;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-card .number {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1.2;
+}
+
+.dashboard-card .label {
+  font-size: 0.85rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.dashboard-card .icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.icon-blue {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.icon-green {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.icon-orange {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.icon-red {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* === PANEL DE BÚSQUEDA === */
+.search-bar {
+  position: relative;
+}
+
+.search-bar .form-control {
+  padding-left: 2.75rem;
+  border-radius: 10px;
+  background: #f7f8fa;
+  border: 1.5px solid #e8ecf1;
+}
+
+.search-bar .search-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+}
+
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+  .dashboard-card .number {
+    font-size: 1.6rem;
+  }
+  
+  .container-fluid {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+  
+  .navbar-brand span {
+    font-size: 1.1rem !important;
+  }
+}

@@ -1,0 +1,160 @@
+<% layout('layout') -%>
+<% title = venta ? 'Editar venta' : 'Nueva venta' %>
+
+<div class="row">
+  <div class="col-lg-8 mx-auto">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-cart-plus me-2"></i>
+        <%= title %>
+      </div>
+      <div class="card-body">
+        <% if (error) { %>
+          <div class="alert alert-modern alert-modern-danger">
+            <i class="fas fa-exclamation-circle me-2"></i> <%= error %>
+          </div>
+        <% } %>
+
+        <form method="POST" action="<%= venta ? ('/ventas/' + venta.id_venta + '/editar') : '/ventas' %>" onsubmit="return validarVenta(this)">
+          
+          <!-- Productos -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold">
+              <i class="fas fa-box me-2 text-muted"></i>Productos
+            </label>
+            <div id="lineas-productos">
+              <% if (detalles && detalles.length) { %>
+                <% detalles.forEach((d, idx) => { %>
+                  <div class="row g-2 mb-2 linea">
+                    <div class="col-md-7">
+                      <select name="producto_id" class="form-select" required>
+                        <% productos.forEach(p => { %>
+                          <option value="<%= p.id_producto %>" <%= p.id_producto === d.id_producto ? 'selected' : '' %>>
+                            <%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)
+                          </option>
+                        <% }) %>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <input name="cantidad" type="number" min="1" class="form-control" value="<%= d.cantidad %>" required>
+                    </div>
+                    <div class="col-md-2">
+                      <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
+                        <i class="fas fa-times"></i>
+                      </button>
+                    </div>
+                  </div>
+                <% }) %>
+              <% } else { %>
+                <div class="row g-2 mb-2 linea">
+                  <div class="col-md-7">
+                    <select name="producto_id" class="form-select" required>
+                      <% productos.forEach(p => { %>
+                        <option value="<%= p.id_producto %>">
+                          <%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)
+                        </option>
+                      <% }) %>
+                    </select>
+                  </div>
+                  <div class="col-md-3">
+                    <input name="cantidad" type="number" min="1" class="form-control" value="1" required>
+                  </div>
+                  <div class="col-md-2">
+                    <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
+                      <i class="fas fa-times"></i>
+                    </button>
+                  </div>
+                </div>
+              <% } %>
+            </div>
+            <button type="button" class="btn btn-modern-outline mt-2" onclick="agregarLinea()">
+              <i class="fas fa-plus me-1"></i> Agregar producto
+            </button>
+          </div>
+
+          <hr>
+
+          <!-- Tipo de pago -->
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <i class="fas fa-credit-card me-2 text-muted"></i>Tipo de pago
+              </label>
+              <select name="tipo_pago" id="tipo_pago" class="form-select" onchange="toggleEfectivo()">
+                <option value="efectivo">💰 Efectivo</option>
+                <option value="pago_móvil">📱 Pago móvil</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="area_efectivo">
+              <label class="form-label fw-semibold">
+                <i class="fas fa-money-bill-wave me-2 text-muted"></i>Monto recibido
+              </label>
+              <input name="monto_recibido" id="monto_recibido" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
+            </div>
+          </div>
+
+          <hr>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-modern-primary px-4" type="submit">
+              <i class="fas fa-save me-2"></i> Procesar Venta
+            </button>
+            <a class="btn btn-modern-outline" href="/ventas">
+              <i class="fas fa-times me-1"></i> Cancelar
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function agregarLinea() {
+    const cont = document.getElementById('lineas-productos');
+    const linea = document.createElement('div');
+    linea.className = 'row g-2 mb-2 linea';
+    linea.innerHTML = `
+      <div class="col-md-7">
+        <select name="producto_id" class="form-select" required>
+          <% productos.forEach(p => { %>
+            <option value="<%= p.id_producto %>"><%= p.nombre %> (<%= formatoMoneda(p.precio_venta) %>)</option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <input name="cantidad" type="number" min="1" class="form-control" value="1" required>
+      </div>
+      <div class="col-md-2">
+        <button type="button" class="btn btn-modern-danger w-100" onclick="this.closest('.linea').remove()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    `;
+    cont.appendChild(linea);
+  }
+
+  function toggleEfectivo() {
+    const tipo = document.getElementById('tipo_pago').value;
+    document.getElementById('area_efectivo').style.display = tipo === 'efectivo' ? 'block' : 'none';
+  }
+  toggleEfectivo();
+
+  function validarVenta(form) {
+    const cantidades = Array.from(form.querySelectorAll('input[name="cantidad"]'));
+    for (const c of cantidades) {
+      if (Number(c.value) <= 0) {
+        alert('Cantidad inválida');
+        return false;
+      }
+    }
+    if (form.tipo_pago.value === 'efectivo') {
+      const monto = form.monto_recibido.value;
+      if (monto && Number(monto) < 0) {
+        alert('Monto recibido inválido');
+        return false;
+      }
+    }
+    return true;
+  }
+</script>

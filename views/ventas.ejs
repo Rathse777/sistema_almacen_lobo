@@ -1,0 +1,85 @@
+<% layout('layout') -%>
+<% title = 'Ventas' %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
+      <i class="fas fa-shopping-cart me-2 text-primary"></i>Registro de Ventas
+    </h2>
+    <p class="text-muted" style="font-size: 0.9rem;">Historial de transacciones realizadas</p>
+  </div>
+  <div>
+    <a class="btn btn-modern-success" href="/ventas/nuevo">
+      <i class="fas fa-plus me-2"></i> Nueva Venta
+    </a>
+    <% if (usuario.rol === 'admin') { %>
+      <a class="btn btn-modern-outline" href="/export/ventas">
+        <i class="fas fa-file-export me-1"></i> Exportar
+      </a>
+    <% } %>
+  </div>
+</div>
+
+<div class="card-modern">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-modern mb-0">
+        <thead>
+          <tr>
+            <th>ID Venta</th>
+            <th>Fecha</th>
+            <th>Atendido por</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Monto Pagado</th>
+            <th class="text-end">Vuelto</th>
+            <th class="text-center">Estado</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% ventas.forEach(v => { %>
+            <tr>
+              <td><span class="fw-semibold">#<%= v.id_venta %></span></td>
+              <td><%= formatoFechaMostrar(v.fecha) %></td>
+              <td><%= v.usuario_nombre || 'Sistema' %></td>
+              <td class="text-end fw-bold"><%= formatoMoneda(v.total) %></td>
+              <td class="text-end"><%= v.monto_recibido ? formatoMoneda(v.monto_recibido) : '-' %></td>
+              <td class="text-end">
+                <% if (v.monto_recibido && v.total) { %>
+                  <%= formatoMoneda(v.monto_recibido - v.total) %>
+                <% } else { %>
+                  -
+                <% } %>
+              </td>
+              <td class="text-center">
+                <% if (v.anulada) { %>
+                  <span class="badge bg-danger">Anulada</span>
+                <% } else { %>
+                  <span class="badge badge-stock-ok">Activa</span>
+                <% } %>
+              </td>
+              <td class="text-center">
+                <% if (!v.anulada) { %>
+                  <form style="display:inline" method="POST" action="/ventas/<%= v.id_venta %>/anular" 
+                        onsubmit="return confirm('¿Anular esta venta? Se restaurará el stock.')">
+                    <button class="btn btn-sm btn-modern-danger" title="Anular">
+                      <i class="fas fa-ban"></i>
+                    </button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (ventas.length === 0) { %>
+            <tr>
+              <td colspan="8" class="text-center py-4 text-muted">
+                <i class="fas fa-receipt" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+                No hay ventas registradas
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

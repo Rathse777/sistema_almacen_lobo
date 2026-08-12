@@ -1,0 +1,125 @@
+<% layout('layout') -%>
+<% title = 'Dashboard' %>
+
+<!-- Panel de Estadísticas -->
+<div class="row g-4 mb-4">
+  <div class="col-md-3 col-6">
+    <div class="dashboard-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="label">Total Productos</div>
+          <div class="number"><%= typeof productos !== 'undefined' ? productos.length : 0 %></div>
+        </div>
+        <div class="icon icon-blue">
+          <i class="fas fa-box"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="dashboard-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="label">Ingresos Totales</div>
+          <div class="number"><%= typeof totalIngresos !== 'undefined' ? formatoMoneda(totalIngresos) : '$0.00' %></div>
+        </div>
+        <div class="icon icon-green">
+          <i class="fas fa-dollar-sign"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="dashboard-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="label">Ventas Realizadas</div>
+          <div class="number"><%= typeof ventasRealizadas !== 'undefined' ? ventasRealizadas : 0 %></div>
+        </div>
+        <div class="icon icon-orange">
+          <i class="fas fa-receipt"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="dashboard-card">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="label">Stock Bajo</div>
+          <div class="number"><%= alertasStock ? alertasStock.length : 0 %></div>
+        </div>
+        <div class="icon icon-red">
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Ventas de Hoy y Alertas -->
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-history me-2 text-primary"></i> Ventas de Hoy
+        <span class="badge bg-primary rounded-pill ms-2"><%= ventasHoy ? ventasHoy.length : 0 %></span>
+      </div>
+      <div class="card-body p-0">
+        <% if (ventasHoy && ventasHoy.length > 0) { %>
+          <div class="list-group list-group-flush">
+            <% ventasHoy.forEach(v => { %>
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <small class="text-muted"><%= formatoFechaMostrar(v.fecha) %></small>
+                  <span class="badge bg-light text-dark ms-2"><%= v.tipo_pago %></span>
+                </div>
+                <span class="fw-bold"><%= formatoMoneda(v.total) %></span>
+              </div>
+            <% }) %>
+          </div>
+          <div class="p-3 bg-light border-top d-flex justify-content-between">
+            <span class="fw-bold">Total del día:</span>
+            <span class="fw-bold text-success"><%= typeof totalHoy !== 'undefined' ? formatoMoneda(totalHoy) : '$0.00' %></span>
+          </div>
+        <% } else { %>
+          <div class="text-center py-4">
+            <i class="fas fa-shopping-bag text-muted" style="font-size: 2rem;"></i>
+            <p class="text-muted mt-2 mb-0">No hay ventas registradas hoy</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-exclamation-circle me-2 text-warning"></i> Alertas de Stock
+        <span class="badge bg-danger rounded-pill ms-2"><%= alertasStock ? alertasStock.length : 0 %></span>
+      </div>
+      <div class="card-body p-0">
+        <% if (alertasStock && alertasStock.length > 0) { %>
+          <div class="list-group list-group-flush">
+            <% alertasStock.forEach(a => { %>
+              <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                  <i class="fas fa-box text-warning me-2"></i>
+                  <%= a.nombre %>
+                </div>
+                <span class="badge bg-danger rounded-pill">
+                  <i class="fas fa-arrow-down me-1"></i> <%= a.stock_total %>
+                </span>
+              </div>
+            <% }) %>
+          </div>
+        <% } else { %>
+          <div class="text-center py-4">
+            <i class="fas fa-check-circle text-success" style="font-size: 2rem;"></i>
+            <p class="text-muted mt-2 mb-0">Todos los productos tienen stock suficiente</p>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+</div>

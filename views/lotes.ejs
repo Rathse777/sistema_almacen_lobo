@@ -1,0 +1,78 @@
+<% layout('layout') -%>
+<% title = 'Lotes' %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
+      <i class="fas fa-archive me-2 text-primary"></i>Gestión de Lotes
+    </h2>
+    <p class="text-muted" style="font-size: 0.9rem;">Control de inventario por lotes</p>
+  </div>
+  <div>
+    <a class="btn btn-modern-success" href="/lotes/nuevo">
+      <i class="fas fa-plus me-2"></i> Registrar Lote
+    </a>
+  </div>
+</div>
+
+<div class="card-modern">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-modern mb-0">
+        <thead>
+          <tr>
+            <th>ID Lote</th>
+            <th>Producto</th>
+            <th class="text-center">Stock Actual</th>
+            <th class="text-end">Precio Compra</th>
+            <th class="text-end">Precio Venta</th>
+            <th class="text-center">Fecha Ingreso</th>
+            <th class="text-center">Vencimiento</th>
+            <th class="text-center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% lotes.forEach(l => { %>
+            <tr>
+              <td><span class="badge bg-secondary bg-opacity-10 text-dark fw-normal">#<%= l.id_lote %></span></td>
+              <td><strong><%= l.producto_nombre %></strong></td>
+              <td class="text-center">
+                <span class="badge badge-stock-ok"><%= l.cantidad_actual %></span>
+              </td>
+              <td class="text-end"><%= formatoMoneda(l.precio_compra) %></td>
+              <td class="text-end fw-semibold"><%= formatoMoneda(l.precio_venta) %></td>
+              <td class="text-center"><%= formatoFechaMostrar(l.fecha_ingreso) %></td>
+              <td class="text-center">
+                <% if (l.fecha_vencimiento) { %>
+                  <% const hoy = new Date(); const vence = new Date(l.fecha_vencimiento); const diff = (vence - hoy) / (1000*3600*24); %>
+                  <% if (vence < hoy) { %>
+                    <span class="badge badge-vencido"><i class="fas fa-exclamation-circle me-1"></i><%= formatoFechaMostrar(l.fecha_vencimiento) %></span>
+                  <% } else if (diff <= 7) { %>
+                    <span class="badge badge-vencimiento"><i class="fas fa-clock me-1"></i><%= formatoFechaMostrar(l.fecha_vencimiento) %></span>
+                  <% } else { %>
+                    <span class="badge bg-light text-dark fw-normal"><%= formatoFechaMostrar(l.fecha_vencimiento) %></span>
+                  <% } %>
+                <% } else { %>
+                  <span class="text-muted">-</span>
+                <% } %>
+              </td>
+              <td class="text-center">
+                <a class="btn btn-sm btn-modern-outline" href="/lotes/<%= l.id_lote %>/editar" title="Editar">
+                  <i class="fas fa-edit"></i>
+                </a>
+              </td>
+            </tr>
+          <% }) %>
+          <% if (lotes.length === 0) { %>
+            <tr>
+              <td colspan="8" class="text-center py-4 text-muted">
+                <i class="fas fa-archive" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
+                No hay lotes registrados
+              </td>
+            </tr>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

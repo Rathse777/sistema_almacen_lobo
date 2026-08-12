@@ -1,0 +1,26 @@
+<% layout('layout') -%>
+<% title = categoria ? 'Editar categoría' : 'Nueva categoría' %>
+
+<!--
+  vistas/categoria_form.ejs
+  Formulario para crear (o editar) una categoría.
+  Nota: en server.js solo existe la ruta para crear (/categorias POST).
+  Se mantiene la plantilla genérica por claridad pedagógica.
+-->
+
+<h2><%= title %></h2>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert alert-danger"><%= error %></div>
+<% } %>
+
+<form method="POST" action="/categorias">
+  <div class="mb-3">
+    <label class="form-label">Nombre de la categoría</label>
+    <input name="nombre" class="form-control" required value="<%= categoria ? categoria.nombre : '' %>">
+    <div class="form-text">Ingrese un nombre único para la categoría (p. ej. Abarrotes, Bebidas).</div>
+  </div>
+
+  <button class="btn btn-primary">Guardar</button>
+  <a class="btn btn-secondary" href="/categorias">Cancelar</a>
+</form>
