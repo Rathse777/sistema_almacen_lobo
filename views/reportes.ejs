@@ -1,72 +1,107 @@
 <% layout('layout') -%>
-<% title = 'Reportes' %>
-
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-  <div>
-    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
-      <i class="fas fa-chart-line me-2 text-primary"></i>Reportes del Sistema
-    </h2>
-    <p class="text-muted" style="font-size: 0.9rem;">Consulta métricas y resumen general de operaciones</p>
-  </div>
-</div>
+<% title = 'Reportes y Estadísticas' %>
 
 <div class="row g-4 mb-4">
+  <!-- Tarjeta Total Hoy -->
   <div class="col-md-4">
-    <div class="card-modern text-center p-3">
-      <div class="text-muted small mb-1">Total Ventas</div>
-      <h3 class="fw-bold text-success mb-0">$<%= typeof totalVentas !== 'undefined' ? totalVentas : '0.00' %></h3>
+    <div class="card-modern p-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted d-block small">Ventas de Hoy</span>
+          <h3 class="fw-bold text-success mb-0"><%= formatoMoneda(totalVentasHoy) %></h3>
+          <small class="text-muted"><%= cantidadVentasHoy %> venta(s) realizada(s)</small>
+        </div>
+        <div class="bg-light p-3 rounded-circle text-success">
+          <i class="fas fa-calendar-day fa-2x"></i>
+        </div>
+      </div>
     </div>
   </div>
+
+  <!-- Tarjeta Total Histórico -->
   <div class="col-md-4">
-    <div class="card-modern text-center p-3">
-      <div class="text-muted small mb-1">Total Lotes Registrados</div>
-      <h3 class="fw-bold text-primary mb-0"><%= typeof totalLotes !== 'undefined' ? totalLotes : 0 %></h3>
-    </div>
-  </div>
-  <div class="col-md-4">
-    <div class="card-modern text-center p-3">
-      <div class="text-muted small mb-1">Productos Registrados</div>
-      <h3 class="fw-bold text-info mb-0"><%= typeof totalProductos !== 'undefined' ? totalProductos : 0 %></h3>
+    <div class="card-modern p-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <span class="text-muted d-block small">Total Recaudado (Histórico)</span>
+          <h3 class="fw-bold text-primary mb-0"><%= formatoMoneda(totalVentasHistorico) %></h3>
+        </div>
+        <div class="bg-light p-3 rounded-circle text-primary">
+          <i class="fas fa-chart-line fa-2x"></i>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <div class="row g-4">
-  <div class="col-12">
+  <!-- Productos Más Vendidos -->
+  <div class="col-lg-6">
     <div class="card-modern">
-      <div class="card-header">
-        <i class="fas fa-file-alt me-2"></i> Resumen de Operaciones
+      <div class="card-header fw-bold">
+        <i class="fas fa-trophy me-2 text-warning"></i>Top Productos Más Vendidos
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
-          <table class="table table-modern mb-0">
-            <thead>
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
               <tr>
-                <th>Fecha</th>
-                <th>Concepto / Tipo</th>
-                <th>Detalle</th>
-                <th class="text-end">Monto Total</th>
+                <th>Producto</th>
+                <th class="text-center">Unidades</th>
+                <th class="text-end">Total Recaudado</th>
               </tr>
             </thead>
             <tbody>
-              <% if (typeof reportes !== 'undefined' && reportes && reportes.length > 0) { %>
-                <% reportes.forEach(r => { %>
+              <% if (topProductos && topProductos.length > 0) { %>
+                <% topProductos.forEach(p => { %>
                   <tr>
-                    <td><%= r.fecha %></td>
-                    <td>
-                      <span class="badge <%= r.tipo === 'Venta' ? 'bg-success' : 'bg-primary' %> text-white">
-                        <%= r.tipo %>
-                      </span>
-                    </td>
-                    <td><%= r.descripcion || 'Sin detalle' %></td>
-                    <td class="text-end fw-bold">$<%= r.monto %></td>
+                    <td><strong><%= p.nombre %></strong></td>
+                    <td class="text-center"><span class="badge bg-secondary"><%= p.total_vendido %></span></td>
+                    <td class="text-end text-success fw-semibold"><%= formatoMoneda(p.total_recaudado) %></td>
                   </tr>
                 <% }) %>
               <% } else { %>
                 <tr>
-                  <td colspan="4" class="text-center text-muted py-4">
-                    <i class="fas fa-info-circle me-1"></i> No hay datos de reportes disponibles.
-                  </td>
+                  <td colspan="3" class="text-center text-muted py-3">No hay datos de ventas registradas.</td>
+                </tr>
+              <% } %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Últimas Ventas -->
+  <div class="col-lg-6">
+    <div class="card-modern">
+      <div class="card-header fw-bold">
+        <i class="fas fa-history me-2 text-info"></i>Últimas Ventas Registradas
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light">
+              <tr>
+                <th># Venta</th>
+                <th>Fecha</th>
+                <th>Atendido por</th>
+                <th class="text-end">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (ultimasVentas && ultimasVentas.length > 0) { %>
+                <% ultimasVentas.forEach(v => { %>
+                  <tr>
+                    <td>#<%= v.id_venta %></td>
+                    <td><%= formatoFechaMostrar(v.fecha) %></td>
+                    <td><%= v.usuario_nombre || 'Sistema' %></td>
+                    <td class="text-end fw-bold text-success"><%= formatoMoneda(v.total) %></td>
+                  </tr>
+                <% }) %>
+              <% } else { %>
+                <tr>
+                  <td colspan="4" class="text-center text-muted py-3">No se han realizado ventas aún.</td>
                 </tr>
               <% } %>
             </tbody>

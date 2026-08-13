@@ -37,7 +37,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     cookie: {
-        secure: false // Mantener en false si no usas un proxy HTTPS estricto en la app
+        secure: false
     }
 }));
 
@@ -47,16 +47,14 @@ app.use((req, res, next) => {
     next();
 });
 
-// Comprueba que el usuario esté logueado
 function requiereLogin(req, res, next) {
   if (req.session && req.session.usuario) {
-    res.locals.usuario = req.session.usuario; // disponible en vistas
+    res.locals.usuario = req.session.usuario;
     return next();
   }
   return res.redirect('/login');
 }
 
-// Comprueba que el usuario sea admin
 function requiereAdmin(req, res, next) {
   if (req.session && req.session.usuario && req.session.usuario.rol === 'admin') {
     return next();
@@ -64,18 +62,14 @@ function requiereAdmin(req, res, next) {
   return res.status(403).send('Acceso denegado: se requiere rol admin.');
 }
 
-// Helper: formatea fecha para mostrar (dd/mm/yyyy)
 app.locals.formatoFechaMostrar = formatoFechaMostrar;
 app.locals.formatoMoneda = formatoMoneda;
 
 // --- Rutas de autenticación ---
-
-// GET /login - formulario de login
 app.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-// POST /login - procesa el login (simple, contraseñas en texto plano)
 app.post('/login', (req, res) => {
   const { nombre, contraseña } = req.body;
   if (!nombre || !contraseña) {
@@ -85,12 +79,10 @@ app.post('/login', (req, res) => {
   if (!fila) {
     return res.render('login', { error: 'Credenciales inválidas.' });
   }
-  // Guardar usuario en sesión (solo datos necesarios)
   req.session.usuario = { Id_usuario: fila.Id_usuario, nombre: fila.nombre, rol: fila.rol };
   res.redirect('/');
 });
 
-// GET /logout - cerrar sesión
 app.get('/logout', (req, res) => {
   req.session.destroy(() => {
     res.redirect('/login');
@@ -99,18 +91,72 @@ app.get('/logout', (req, res) => {
 
 // --- Dashboard ---
 app.get('/', requiereLogin, (req, res) => {
-  // Mostrar alertas: productos con stock <= 5 y resumen ventas del día
-  const alertasStock = db.prepare('SELECT id_producto, nombre, stock_total FROM Productos WHERE stock_total <= 5').all();
+  try {
+    const hoy = new Date().toISOString().slice(0, 10);
 
-  // Ventas de hoy y total vendido
-  const hoy = new Date().toISOString().slice(0,10);
-  const ventasHoy = db.prepare('SELECT * FROM Ventas WHERE fecha = ? AND anulada = 0').all(hoy);
-  const totalHoy = ventasHoy.reduce((s, v) => s + v.total, 0);
+    // 1. Total de productos
+    const productos = db.prepare('SELECT id_producto FROM Productos').all();
 
-  res.render('index', { alertasStock, ventasHoy, totalHoy });
+    // 2. Total de ingresos
+    const ingresos = db.prepare('SELECT SUM(total) AS total FROM Ventas WHERE (anulada = 0 OR anulada IS NULL)').get();
+    const totalIngresos = ingresos ? (ingresos.total || 0) : 0;
+
+    // 3. Cantidad de ventas
+    const totalVentas = db.prepare('SELECT COUNT(*) AS total FROM Ventas WHERE (anulada = 0 OR anulada IS NULL)').get();
+    const ventasRealizadas = totalVentas ? totalVentas.total : 0;
+
+    // 4. Ventas de hoy
+    const ventasHoy = db.prepare(`
+      SELECT * FROM Ventas 
+      WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)
+      ORDER BY id_venta DESC
+    `).all(hoy);
+
+    const totalHoy = ventasHoy.reduce((acc, v) => acc + (v.total || 0), 0);
+
+    // 5. Alertas de Stock Mínimo
+    const alertasStock = db.prepare(`
+      SELECT id_producto, nombre, stock_total, stock_minimo 
+      FROM Productos 
+      WHERE stock_total <= stock_minimo
+    `).all();
+
+    // 6. Alertas de Vencimiento
+    const alertasVencimiento = db.prepare(`
+      SELECT 
+        l.id_lote, 
+        l.fecha_vencimiento, 
+        l.cantidad_actual, 
+        p.nombre AS producto,
+        CASE 
+          WHEN l.fecha_vencimiento < date('now', 'localtime') THEN 'vencido'
+          ELSE 'por_vencer'
+        END AS estado_vencimiento
+      FROM Lotes l
+      JOIN Productos p ON l.id_producto = p.id_producto
+      WHERE l.cantidad_actual > 0 
+        AND l.fecha_vencimiento IS NOT NULL 
+        AND l.fecha_vencimiento <= date('now', 'localtime', '+30 days')
+      ORDER BY l.fecha_vencimiento ASC
+    `).all();
+
+    res.render('index', {
+      productos,
+      totalIngresos,
+      ventasRealizadas,
+      ventasHoy,
+      totalHoy,
+      alertasStock,
+      alertasVencimiento
+    });
+
+  } catch (error) {
+    console.error('Error al cargar el Dashboard:', error);
+    res.status(500).send('Error al cargar el inicio');
+  }
 });
 
-// --- Rutas Categorias (CRUD mínimo) ---
+// --- Rutas Categorias ---
 app.get('/categorias', requiereLogin, (req, res) => {
   const categorias = db.prepare('SELECT * FROM Categorias').all();
   res.render('categorias', { categorias });
@@ -133,7 +179,7 @@ app.post('/categorias', requiereLogin, (req, res) => {
   }
 });
 
-// --- Rutas Productos (CRUD) ---
+// --- Rutas Productos ---
 app.get('/productos', requiereLogin, (req, res) => {
   const productos = db.prepare(`
     SELECT p.*, c.nombre AS categoria_nombre
@@ -192,7 +238,7 @@ app.post('/productos/:id/eliminar', requiereLogin, (req, res) => {
   res.redirect('/productos');
 });
 
-// --- Rutas Lotes (CRUD) ---
+// --- Rutas Lotes ---
 app.get('/lotes', requiereLogin, (req, res) => {
   const lotes = db.prepare(`
     SELECT l.*, p.nombre AS producto_nombre
@@ -207,43 +253,50 @@ app.get('/lotes/nuevo', requiereLogin, (req, res) => {
   res.render('lote_form', { lote: null, productos, error: null });
 });
 
+// Alias opcional por si el formulario envía a /lotes
+app.post('/lotes', requiereLogin, (req, res) => {
+  res.redirect(307, '/lotes/nuevo');
+});
+
 app.post('/lotes/nuevo', requiereLogin, (req, res) => {
   try {
-    const { id_producto, cantidad, precio_compra, precio_venta, fecha_vencimiento } = req.body;
+    const { id_producto, producto_id, cantidad, cantidad_inicial, precio_compra, precio_venta, fecha_vencimiento } = req.body;
 
-    if (!id_producto || !cantidad || Number(cantidad) <= 0) {
-      const productos = db.prepare('SELECT * FROM Productos').all();
+    // Normalizar los valores recibidos desde el formulario EJS
+    const idProd = id_producto || producto_id;
+    const cantNum = Number(cantidad || cantidad_inicial || 0);
+
+    if (!idProd || cantNum <= 0) {
+      const productos = db.prepare('SELECT * FROM Productos ORDER BY nombre ASC').all();
       return res.render('lote_form', { lote: null, productos, error: 'Debe seleccionar un producto y una cantidad válida.' });
     }
 
     const fechaIngreso = new Date().toISOString().slice(0, 10);
     const isoFechaVenc = fechaAValid(fecha_vencimiento);
-    const cant = Number(cantidad);
 
     const registrarLoteTx = db.transaction(() => {
-      // Insertar nuevo lote
       db.prepare(`
         INSERT INTO Lotes (id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id_producto,
-        cant,
-        cant,
+        idProd,
+        cantNum,
+        cantNum,
         Number(precio_compra || 0),
         Number(precio_venta || 0),
         fechaIngreso,
         isoFechaVenc
       );
 
-      // Incrementar el stock_total del producto correspondientemente
-      db.prepare(`UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?`).run(cant, id_producto);
+      // Incrementar el stock total del producto
+      db.prepare(`UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?`).run(cantNum, idProd);
     });
 
     registrarLoteTx();
     res.redirect('/lotes');
   } catch (error) {
     console.error('Error al registrar lote:', error);
-    const productos = db.prepare('SELECT * FROM Productos').all();
+    const productos = db.prepare('SELECT * FROM Productos ORDER BY nombre ASC').all();
     res.render('lote_form', { lote: null, productos, error: 'Error al procesar el lote: ' + error.message });
   }
 });
@@ -299,7 +352,7 @@ app.get('/ventas', requiereLogin, (req, res) => {
 });
 
 app.get('/ventas/nuevo', requiereLogin, (req, res) => {
-  const productos = db.prepare('SELECT * FROM Productos').all();
+  const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
   res.render('venta_form', { productos, error: null, venta: null, detalles: [] });
 });
 
@@ -315,74 +368,74 @@ function fechaAValid(fechaDisplay) {
   return fechaDisplay;
 }
 
-// POST /ventas - registrar venta con lógica FIFO
-// server.js (Sección correspondiente a la ruta POST de ventas)
-
-app.post('/ventas', async (req, res) => {
-  const { cliente, productos } = req.body; // productos: [{ producto_id, lote_id, cantidad, precio_unitario }]
-
-  if (!productos || !Array.isArray(productos) || productos.length === 0) {
-    return res.status(400).json({ error: 'Debe incluir al menos un producto en la venta.' });
-  }
-
-  // Iniciar transacción en la base de datos
-  const db = require('./db');
-
+// POST /ventas - Registrar Venta Simplificada (Soporta arreglos de producto_id y cantidad)
+app.post('/ventas', requiereLogin, (req, res) => {
   try {
-    await db.query('BEGIN TRANSACTION');
+    let { producto_id, cantidad, monto_recibido } = req.body;
 
-    // 1. Insertar el encabezado de la venta
-    const resultVenta = await db.query(
-      'INSERT INTO ventas (cliente, fecha, total) VALUES (?, DATETIME("now"), ?)',
-      [cliente || 'Cliente General', 0]
-    );
-    const ventaId = resultVenta.lastID;
-
-    let totalVenta = 0;
-
-    // 2. Procesar cada producto de la venta
-    for (const item of productos) {
-      const { producto_id, lote_id, cantidad, precio_unitario } = item;
-
-      // Verificar que haya suficiente stock en el lote o producto
-      let stockQuery = 'SELECT cantidad FROM lotes WHERE id = ?';
-      let stockResult = await db.query(stockQuery, [lote_id]);
-
-      if (!stockResult || stockResult.length === 0 || stockResult[0].cantidad < cantidad) {
-        throw new Error(`Stock insuficiente para el producto ID ${producto_id} en el lote seleccionado.`);
-      }
-
-      // Actualizar el stock del lote
-      await db.query(
-        'UPDATE lotes SET cantidad = cantidad - ? WHERE id = ?',
-        [cantidad, lote_id]
-      );
-
-      // Registrar el detalle de la venta
-      const subtotal = cantidad * precio_unitario;
-      totalVenta += subtotal;
-
-      await db.query(
-        'INSERT INTO detalle_ventas (venta_id, producto_id, lote_id, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?, ?)',
-        [ventaId, producto_id, lote_id, cantidad, precio_unitario, subtotal]
-      );
+    if (!producto_id) {
+      const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
+      return res.render('venta_form', { productos, error: 'Debe incluir al menos un producto en la venta.', venta: null, detalles: [] });
     }
 
-    // 3. Actualizar el total de la venta
-    await db.query('UPDATE ventas SET total = ? WHERE id = ?', [totalVenta, ventaId]);
+    if (!Array.isArray(producto_id)) producto_id = [producto_id];
+    if (!Array.isArray(cantidad)) cantidad = [cantidad];
 
-    // Confirmar transacción
-    await db.query('COMMIT');
+    const fechaHoy = new Date().toISOString().slice(0, 10);
+    const idUsuario = req.session.usuario.Id_usuario;
 
-    res.redirect('/ventas');
-  } catch (error) {
-    // Revertir cambios si ocurre un error
-    await db.query('ROLLBACK');
-    console.error('Error al registrar la venta:', error.message);
-    res.status(500).render('venta_form', {
-      error: 'Error interno del sistema al procesar la venta: ' + error.message,
-      title: 'Registrar Venta'
+    const procesarVentaTx = db.transaction(() => {
+      const resultVenta = db.prepare(
+        'INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, 0, ?, ?, 0)'
+      ).run(fechaHoy, monto_recibido ? Number(monto_recibido) : null, idUsuario);
+
+      const idVenta = resultVenta.lastInsertRowid;
+      let totalVenta = 0;
+
+      for (let i = 0; i < producto_id.length; i++) {
+        const idp = Number(producto_id[i]);
+        const cantRequerida = Number(cantidad[i]);
+
+        if (!idp || cantRequerida <= 0) continue;
+
+        const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(idp);
+        if (!producto || producto.stock_total < cantRequerida) {
+          throw new Error(`Stock insuficiente para el producto: ${producto ? producto.nombre : idp}`);
+        }
+
+        let restante = cantRequerida;
+        const lotes = db.prepare('SELECT * FROM Lotes WHERE id_producto = ? AND cantidad_actual > 0 ORDER BY fecha_ingreso ASC').all(idp);
+
+        for (const lote of lotes) {
+          if (restante <= 0) break;
+          const uso = Math.min(restante, lote.cantidad_actual);
+          const precioUnit = (lote.precio_venta && lote.precio_venta > 0) ? lote.precio_venta : (producto.precio_venta || 0);
+
+          db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, ?, ?, ?)').run(idVenta, idp, lote.id_lote, uso, precioUnit);
+          db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual - ? WHERE id_lote = ?').run(uso, lote.id_lote);
+
+          totalVenta += uso * precioUnit;
+          restante -= uso;
+        }
+
+        if (restante > 0) {
+          const precioUnit = producto.precio_venta || 0;
+          db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, NULL, ?, ?)').run(idVenta, idp, restante, precioUnit);
+          totalVenta += restante * precioUnit;
+        }
+
+        db.prepare('UPDATE Productos SET stock_total = stock_total - ? WHERE id_producto = ?').run(cantRequerida, idp);
+      }
+
+      db.prepare('UPDATE Ventas SET total = ? WHERE id_venta = ?').run(totalVenta, idVenta);
     });
+
+    procesarVentaTx();
+    res.redirect('/ventas');
+  } catch (e) {
+    console.error('Error al registrar venta:', e);
+    const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
+    res.render('venta_form', { productos, error: 'Error al registrar venta: ' + e.message, venta: null, detalles: [] });
   }
 });
 
@@ -491,7 +544,7 @@ app.post('/ventas/:id/anular', requiereLogin, (req, res) => {
   }
 });
 
-// --- Export CSV (solo admin) ---
+// --- Export CSV ---
 app.get('/export/productos', requiereLogin, requiereAdmin, (req, res) => {
   const productos = db.prepare(`
     SELECT p.*, c.nombre as categoria_nombre FROM Productos p LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
@@ -516,21 +569,64 @@ app.get('/export/ventas', requiereLogin, requiereAdmin, (req, res) => {
   res.send(csv);
 });
 
-// --- API mínima para buscar productos (AJAX) ---
+// --- API de búsqueda ---
 app.get('/api/productos/buscar', requiereLogin, (req, res) => {
   const q = req.query.q || '';
   const filas = db.prepare('SELECT * FROM Productos WHERE nombre LIKE ? OR codigo LIKE ? LIMIT 20').all(`%${q}%`, `%${q}%`);
   res.json(filas);
 });
 
-// Ruta para ver los Reportes
-app.get('/reportes', requiereLogin, async (req, res) => {
-    try {
-        res.render('reportes');
-    } catch (error) {
-        console.error('Error al cargar reportes:', error);
-        res.status(500).send('Error interno del servidor');
-    }
+// Ruta de Reportes
+// Ruta para ver los Reportes (Cálculo en tiempo real desde la BD)
+app.get('/reportes', requiereLogin, (req, res) => {
+  try {
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    // 1. Total vendido hoy
+    const ventasHoy = db.prepare('SELECT SUM(total) AS total FROM Ventas WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)').get(hoy);
+    const totalVentasHoy = ventasHoy.total || 0;
+
+    // 2. Cantidad de ventas realizadas hoy
+    const cantHoy = db.prepare('SELECT COUNT(*) AS cantidad FROM Ventas WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)').get(hoy);
+    const cantidadVentasHoy = cantHoy.cantidad || 0;
+
+    // 3. Total histórico de ventas (no anuladas)
+    const ventasHistorico = db.prepare('SELECT SUM(total) AS total FROM Ventas WHERE (anulada = 0 OR anulada IS NULL)').get();
+    const totalVentasHistorico = ventasHistorico.total || 0;
+
+    // 4. Top 5 productos más vendidos
+    const topProductos = db.prepare(`
+      SELECT p.nombre, SUM(dv.cantidad) AS total_vendido, SUM(dv.cantidad * dv.precio_unitario) AS total_recaudado
+      FROM Detalle_ventas dv
+      JOIN Ventas v ON dv.id_venta = v.id_venta
+      JOIN Productos p ON dv.id_producto = p.id_producto
+      WHERE (v.anulada = 0 OR v.anulada IS NULL)
+      GROUP BY p.id_producto
+      ORDER BY total_vendido DESC
+      LIMIT 5
+    `).all();
+
+    // 5. Últimas 10 ventas registradas
+    const ultimasVentas = db.prepare(`
+      SELECT v.*, u.nombre AS usuario_nombre
+      FROM Ventas v
+      LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario
+      WHERE (v.anulada = 0 OR v.anulada IS NULL)
+      ORDER BY v.id_venta DESC
+      LIMIT 10
+    `).all();
+
+    res.render('reportes', {
+      totalVentasHoy,
+      cantidadVentasHoy,
+      totalVentasHistorico,
+      topProductos,
+      ultimasVentas
+    });
+  } catch (error) {
+    console.error('Error al generar reportes:', error);
+    res.status(500).send('Error interno del servidor al cargar los reportes');
+  }
 });
 
 // Inicio del servidor

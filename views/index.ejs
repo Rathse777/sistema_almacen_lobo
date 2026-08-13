@@ -47,7 +47,7 @@
       <div class="d-flex justify-content-between align-items-start">
         <div>
           <div class="label">Stock Bajo</div>
-          <div class="number"><%= alertasStock ? alertasStock.length : 0 %></div>
+          <div class="number"><%= typeof alertasStock !== 'undefined' ? alertasStock.length : 0 %></div>
         </div>
         <div class="icon icon-red">
           <i class="fas fa-exclamation-triangle"></i>
@@ -57,16 +57,18 @@
   </div>
 </div>
 
-<!-- Ventas de Hoy y Alertas -->
+<!-- Ventas de Hoy, Alertas de Stock y Alertas de Vencimiento -->
 <div class="row g-4">
-  <div class="col-lg-6">
+
+  <!-- Ventas de Hoy -->
+  <div class="col-lg-4">
     <div class="card-modern">
       <div class="card-header">
         <i class="fas fa-history me-2 text-primary"></i> Ventas de Hoy
-        <span class="badge bg-primary rounded-pill ms-2"><%= ventasHoy ? ventasHoy.length : 0 %></span>
+        <span class="badge bg-primary rounded-pill ms-2"><%= typeof ventasHoy !== 'undefined' ? ventasHoy.length : 0 %></span>
       </div>
       <div class="card-body p-0">
-        <% if (ventasHoy && ventasHoy.length > 0) { %>
+        <% if (typeof ventasHoy !== 'undefined' && ventasHoy.length > 0) { %>
           <div class="list-group list-group-flush">
             <% ventasHoy.forEach(v => { %>
               <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -92,14 +94,15 @@
     </div>
   </div>
 
-  <div class="col-lg-6">
+  <!-- Alertas de Stock Mínimo -->
+  <div class="col-lg-4">
     <div class="card-modern">
       <div class="card-header">
-        <i class="fas fa-exclamation-circle me-2 text-warning"></i> Alertas de Stock
-        <span class="badge bg-danger rounded-pill ms-2"><%= alertasStock ? alertasStock.length : 0 %></span>
+        <i class="fas fa-exclamation-circle me-2 text-warning"></i> Stock Bajo
+        <span class="badge bg-danger rounded-pill ms-2"><%= typeof alertasStock !== 'undefined' ? alertasStock.length : 0 %></span>
       </div>
       <div class="card-body p-0">
-        <% if (alertasStock && alertasStock.length > 0) { %>
+        <% if (typeof alertasStock !== 'undefined' && alertasStock.length > 0) { %>
           <div class="list-group list-group-flush">
             <% alertasStock.forEach(a => { %>
               <div class="list-group-item d-flex justify-content-between align-items-center">
@@ -116,10 +119,52 @@
         <% } else { %>
           <div class="text-center py-4">
             <i class="fas fa-check-circle text-success" style="font-size: 2rem;"></i>
-            <p class="text-muted mt-2 mb-0">Todos los productos tienen stock suficiente</p>
+            <p class="text-muted mt-2 mb-0">Stock suficiente en todos los productos</p>
           </div>
         <% } %>
       </div>
+    </div>
+  </div>
+
+  <!-- Alertas de Vencimiento y Productos Vencidos -->
+<div class="col-lg-4">
+  <div class="card-modern">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div>
+        <i class="fas fa-calendar-times me-2 text-danger"></i> Vencimiento
+      </div>
+      <span class="badge bg-danger rounded-pill">
+        <%= typeof alertasVencimiento !== 'undefined' ? alertasVencimiento.length : 0 %>
+      </span>
+    </div>
+    <div class="card-body p-0">
+      <% if (typeof alertasVencimiento !== 'undefined' && alertasVencimiento.length > 0) { %>
+        <div class="list-group list-group-flush">
+          <% alertasVencimiento.forEach(v => { %>
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+              <div>
+                <div class="fw-bold"><%= v.producto %></div>
+                  <small class="text-muted">Lote #<%= v.id_lote %> (<%= v.cantidad_actual %> unid.)</small>
+              </div>
+
+              <% if (v.estado_vencimiento === 'vencido') { %>
+                <span class="badge bg-danger text-white">
+                  <i class="fas fa-times-circle me-1"></i> Vencido: <%= formatoFechaMostrar(v.fecha_vencimiento) %>
+                </span>
+              <% } else { %>
+                <span class="badge bg-warning text-dark">
+                  <i class="fas fa-exclamation-triangle me-1"></i> Vence: <%= formatoFechaMostrar(v.fecha_vencimiento) %>
+                </span>
+              <% } %>
+            </div>
+          <% }) %>
+        </div>
+      <% } else { %>
+        <div class="text-center py-4">
+          <i class="fas fa-calendar-check text-success" style="font-size: 2rem;"></i>
+          <p class="text-muted mt-2 mb-0">Sin productos vencidos ni por vencer</p>
+        </div>
+      <% } %>
     </div>
   </div>
 </div>
