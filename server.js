@@ -368,7 +368,7 @@ function fechaAValid(fechaDisplay) {
   return fechaDisplay;
 }
 
-// POST /ventas - Registrar Venta Simplificada (Soporta arreglos de producto_id y cantidad)
+// POST /ventas - Registrar Venta Simplificada
 app.post('/ventas', requiereLogin, (req, res) => {
   try {
     let { producto_id, cantidad, monto_recibido } = req.body;
@@ -378,64 +378,98 @@ app.post('/ventas', requiereLogin, (req, res) => {
       return res.render('venta_form', { productos, error: 'Debe incluir al menos un producto en la venta.', venta: null, detalles: [] });
     }
 
+    // Normalizar a arreglos si se envía un solo ítem
     if (!Array.isArray(producto_id)) producto_id = [producto_id];
     if (!Array.isArray(cantidad)) cantidad = [cantidad];
 
     const fechaHoy = new Date().toISOString().slice(0, 10);
-    const idUsuario = req.session.usuario.Id_usuario;
+    const idUsuario = req.session.usuario ? req.session.usuario.Id_usuario : null;
+
+    // Sanitizar monto_recibido para evitar errores con cadenas vacías
+    const montoNumerico = (monto_recibido !== undefined && monto_recibido !== '' && !isNaN(monto_recibido)) 
+      ? Number(monto_recibido) 
+      : null;
 
     const procesarVentaTx = db.transaction(() => {
+      // 1. Crear el registro principal de la venta
       const resultVenta = db.prepare(
         'INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, 0, ?, ?, 0)'
-      ).run(fechaHoy, monto_recibido ? Number(monto_recibido) : null, idUsuario);
+      ).run(fechaHoy, montoNumerico, idUsuario);
 
       const idVenta = resultVenta.lastInsertRowid;
       let totalVenta = 0;
 
+      // 2. Procesar cada producto ingresado
       for (let i = 0; i < producto_id.length; i++) {
         const idp = Number(producto_id[i]);
         const cantRequerida = Number(cantidad[i]);
 
-        if (!idp || cantRequerida <= 0) continue;
+        if (!idp || isNaN(cantRequerida) || cantRequerida <= 0) continue;
 
         const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(idp);
         if (!producto || producto.stock_total < cantRequerida) {
-          throw new Error(`Stock insuficiente para el producto: ${producto ? producto.nombre : idp}`);
+          throw new Error(`Stock insuficiente para el producto: ${producto ? producto.nombre : 'ID ' + idp}`);
         }
 
         let restante = cantRequerida;
-        const lotes = db.prepare('SELECT * FROM Lotes WHERE id_producto = ? AND cantidad_actual > 0 ORDER BY fecha_ingreso ASC').all(idp);
+
+        // Buscar lotes disponibles por FIFO (el más antiguo primero)
+        const lotes = db.prepare(`
+          SELECT * FROM Lotes 
+          WHERE id_producto = ? AND cantidad_actual > 0 
+          ORDER BY fecha_ingreso ASC, id_lote ASC
+        `).all(idp);
 
         for (const lote of lotes) {
           if (restante <= 0) break;
-          const uso = Math.min(restante, lote.cantidad_actual);
-          const precioUnit = (lote.precio_venta && lote.precio_venta > 0) ? lote.precio_venta : (producto.precio_venta || 0);
 
-          db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, ?, ?, ?)').run(idVenta, idp, lote.id_lote, uso, precioUnit);
+          const uso = Math.min(restante, lote.cantidad_actual);
+          const precioUnit = (lote.precio_venta && lote.precio_venta > 0) 
+            ? lote.precio_venta 
+            : (producto.precio_venta || 0);
+
+          db.prepare(`
+            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) 
+            VALUES (?, ?, ?, ?, ?)
+          `).run(idVenta, idp, lote.id_lote, uso, precioUnit);
+
           db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual - ? WHERE id_lote = ?').run(uso, lote.id_lote);
 
           totalVenta += uso * precioUnit;
           restante -= uso;
         }
 
+        // Si la cantidad requerida supera lo que había en lotes pero hay stock general del producto
         if (restante > 0) {
           const precioUnit = producto.precio_venta || 0;
-          db.prepare('INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) VALUES (?, ?, NULL, ?, ?)').run(idVenta, idp, restante, precioUnit);
+          db.prepare(`
+            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) 
+            VALUES (?, ?, NULL, ?, ?)
+          `).run(idVenta, idp, restante, precioUnit);
+
           totalVenta += restante * precioUnit;
         }
 
+        // Actualizar el stock acumulado del producto
         db.prepare('UPDATE Productos SET stock_total = stock_total - ? WHERE id_producto = ?').run(cantRequerida, idp);
       }
 
+      // 3. Actualizar el total definitivo calculado
       db.prepare('UPDATE Ventas SET total = ? WHERE id_venta = ?').run(totalVenta, idVenta);
     });
 
     procesarVentaTx();
     res.redirect('/ventas');
+
   } catch (e) {
     console.error('Error al registrar venta:', e);
     const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
-    res.render('venta_form', { productos, error: 'Error al registrar venta: ' + e.message, venta: null, detalles: [] });
+    res.render('venta_form', { 
+      productos, 
+      error: 'Error al registrar venta: ' + e.message, 
+      venta: null, 
+      detalles: [] 
+    });
   }
 });
 

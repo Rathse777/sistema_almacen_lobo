@@ -1,60 +1,313 @@
 <% layout('layout') -%>
-<% title = lote ? 'Editar Lote' : 'Nuevo Lote' %>
+<% title = venta ? 'Editar venta' : 'Nueva venta' %>
 
-<div class="card-modern p-4 col-md-8 mx-auto">
-  <h4 class="fw-bold mb-3"><%= lote ? 'Editar Lote' : 'Registrar Nuevo Lote' %></h4>
-
-  <% if (typeof error !== 'undefined' && error) { %>
-    <div class="alert alert-danger"><%= error %></div>
-  <% } %>
-
-  <!-- IMPORTANTE: El action debe apuntar a /lotes/nuevo para creación -->
-  <form action="<%= lote ? '/lotes/' + lote.id_lote + '/editar' : '/lotes/nuevo' %>" method="POST">
-    
-    <!-- Selección de Producto (name="id_producto") -->
-    <div class="mb-3">
-      <label for="id_producto" class="form-label fw-semibold">Producto</label>
-      <select name="id_producto" id="id_producto" class="form-select" required>
-        <option value="">-- Seleccione un Producto --</option>
-        <% productos.forEach(p => { %>
-          <option value="<%= p.id_producto %>" <%= (lote && lote.id_producto === p.id_producto) ? 'selected' : '' %>>
-            <%= p.nombre %> <%= p.codigo ? '(' + p.codigo + ')' : '' %>
-          </option>
-        <% }) %>
-      </select>
-    </div>
-
-    <div class="row g-3 mb-3">
-      <!-- Cantidad (name="cantidad") -->
-      <div class="col-md-6">
-        <label for="cantidad" class="form-label fw-semibold">Cantidad del Lote</label>
-        <input type="number" name="cantidad" id="cantidad" class="form-content form-control" min="1" value="<%= lote ? lote.cantidad_actual : '' %>" required>
+<div class="row">
+  <div class="col-lg-10 mx-auto">
+    <div class="card-modern">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="fas fa-shopping-cart me-2"></i><%= title %></span>
+        <span class="fs-5 fw-bold text-primary" id="header-total">Total: $0.00</span>
       </div>
+      <div class="card-body">
+        <% if (error) { %>
+          <div class="alert alert-modern alert-modern-danger">
+            <i class="fas fa-exclamation-circle me-2"></i> <%= error %>
+          </div>
+        <% } %>
 
-      <!-- Fecha de Vencimiento (name="fecha_vencimiento") -->
-      <div class="col-md-6">
-        <label for="fecha_vencimiento" class="form-label fw-semibold">Fecha de Vencimiento</label>
-        <input type="date" name="fecha_vencimiento" id="fecha_vencimiento" class="form-control" value="<%= lote ? lote.fecha_vencimiento : '' %>">
+        <!-- Buscador de productos -->
+        <div class="mb-4 position-relative">
+          <label class="form-label fw-semibold">
+            <i class="fas fa-search me-2 text-muted"></i>Buscar Producto por Nombre o Código
+          </label>
+          <input type="text" id="input-buscador" class="form-control form-control-lg" placeholder="Escriba para buscar..." autocomplete="off">
+          <div id="resultados-busqueda" class="list-group position-absolute w-100 shadow-sm z-3 d-none mt-1" style="max-height: 250px; overflow-y: auto;"></div>
+        </div>
+
+        <!-- Formulario principal con Carrito -->
+        <form id="formVenta" method="POST" action="<%= venta ? ('/ventas/' + venta.id_venta + '/editar') : '/ventas' %>">
+          
+          <input type="hidden" name="monto_recibido" id="monto_recibido_hidden" value="">
+
+          <div class="table-responsive mb-3">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Producto</th>
+                  <th style="width: 130px;">Precio Unit.</th>
+                  <th style="width: 140px;">Cantidad</th>
+                  <th style="width: 130px;" class="text-end">Subtotal</th>
+                  <th style="width: 60px;"></th>
+                </tr>
+              </thead>
+              <tbody id="carrito-body">
+                <!-- Se llena dinámicamente -->
+              </tbody>
+            </table>
+          </div>
+
+          <div id="carrito-vacio-msg" class="text-center py-4 text-muted">
+            <i class="fas fa-cart-arrow-down fa-2x mb-2"></i>
+            <p class="mb-0">El carrito está vacío. Use la barra superior para agregar productos.</p>
+          </div>
+
+          <hr>
+
+          <div class="d-flex justify-content-between align-items-center mb-4 p-3 bg-light rounded">
+            <span class="fs-5 fw-bold">Monto Total:</span>
+            <span class="fs-3 fw-bold text-success" id="monto-total-display">$0.00</span>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-modern-primary px-4" type="button" onclick="prepararModalCobro()">
+              <i class="fas fa-calculator me-2"></i> Procesar y Calcular Vuelto
+            </button>
+            <a class="btn btn-modern-outline" href="/ventas">
+              <i class="fas fa-times me-1"></i> Cancelar
+            </a>
+          </div>
+        </form>
       </div>
     </div>
-
-    <div class="row g-3 mb-4">
-      <!-- Precio Compra (name="precio_compra") -->
-      <div class="col-md-6">
-        <label for="precio_compra" class="form-label fw-semibold">Precio de Compra (Costo)</label>
-        <input type="number" step="0.01" name="precio_compra" id="precio_compra" class="form-control" value="<%= lote ? lote.precio_compra : '0.00' %>">
-      </div>
-
-      <!-- Precio Venta (name="precio_venta") -->
-      <div class="col-md-6">
-        <label for="precio_venta" class="form-label fw-semibold">Precio de Venta del Lote</label>
-        <input type="number" step="0.01" name="precio_venta" id="precio_venta" class="form-control" value="<%= lote ? lote.precio_venta : '0.00' %>">
-      </div>
-    </div>
-
-    <div class="d-flex justify-content-end gap-2">
-      <a href="/lotes" class="btn btn-secondary">Cancelar</a>
-      <button type="submit" class="btn btn-primary"><%= lote ? 'Actualizar' : 'Guardar Lote' %></button>
-    </div>
-  </form>
+  </div>
 </div>
+
+<!-- Modal para Vuelto / Confirmación -->
+<div class="modal fade" id="modalVuelto" tabindex="-1" aria-labelledby="modalVueltoLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="modalVueltoLabel">
+          <i class="fas fa-cash-register me-2"></i>Calcular Vuelto
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Total a Pagar</label>
+          <input type="text" id="modal-total-pagar" class="form-control-plaintext fs-4 fw-bold text-primary" readonly value="$0.00">
+        </div>
+        <div class="mb-3">
+          <label for="modal-monto-recibido" class="form-label fw-semibold">Monto Recibido</label>
+          <input type="number" step="0.01" min="0" class="form-control form-control-lg" id="modal-monto-recibido" placeholder="0.00" oninput="calcularVuelto()">
+        </div>
+        <div class="p-3 bg-light rounded text-center">
+          <span class="d-block text-muted mb-1">Vuelto a Entregar:</span>
+          <span class="fs-2 fw-bold text-success" id="modal-vuelto-display">$0.00</span>
+        </div>
+        <div id="modal-error-monto" class="alert alert-danger mt-3 d-none">
+          El monto recibido es menor al total a pagar.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-modern-outline" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-modern-primary" id="btn-confirmar-venta" onclick="confirmarVenta()">
+          <i class="fas fa-check me-1"></i> Confirmar y Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  
+  // Cargar catálogo desde servidor
+  const catalogoProductos = JSON.parse('<%- JSON.stringify(productos || []) %>');
+  const detallesExistentes = JSON.parse('<%- JSON.stringify(detalles || []) %>');
+  
+  let carrito = [];
+  let totalGeneral = 0;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // Si viene de edición, cargar detalles
+    if (detallesExistentes && detallesExistentes.length > 0) {
+      detallesExistentes.forEach(d => {
+        const prod = catalogoProductos.find(p => p.id_producto === d.id_producto) || {
+          id_producto: d.id_producto,
+          nombre: d.producto_nombre || 'Producto',
+          precio_venta: d.precio_unitario,
+          stock_total: 999
+        };
+        carrito.push({
+          id_producto: prod.id_producto,
+          nombre: prod.nombre,
+          precio: d.precio_unitario || prod.precio_venta,
+          cantidad: d.cantidad,
+          stock: prod.stock_total
+        });
+      });
+      renderizarCarrito();
+    }
+
+    // Configurar buscador
+    const inputBuscador = document.getElementById('input-buscador');
+    const resultadosDiv = document.getElementById('resultados-busqueda');
+
+    inputBuscador.addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        resultadosDiv.classList.add('d-none');
+        return;
+      }
+
+      const coincidentes = catalogoProductos.filter(p => 
+        p.nombre.toLowerCase().includes(q) || (p.codigo && p.codigo.toLowerCase().includes(q))
+      );
+
+      if (coincidentes.length === 0) {
+        resultadosDiv.innerHTML = '<div class="list-group-item text-muted">No se encontraron productos</div>';
+      } else {
+        resultadosDiv.innerHTML = coincidentes.map(p => `
+          <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="agregarAlCarrito(${p.id_producto})">
+            <div>
+              <strong>${p.nombre}</strong>
+              <small class="text-muted d-block">${p.codigo ? 'Cód: ' + p.codigo + ' | ' : ''}Stock: ${p.stock_total}</small>
+            </div>
+            <span class="badge bg-primary fs-6">$${parseFloat(p.precio_venta || 0).toFixed(2)}</span>
+          </button>
+        `).join('');
+      }
+
+      resultadosDiv.classList.remove('d-none');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!inputBuscador.contains(e.target) && !resultadosDiv.contains(e.target)) {
+        resultadosDiv.classList.add('d-none');
+      }
+    });
+  });
+
+  function agregarAlCarrito(idProducto) {
+    const prod = catalogoProductos.find(p => p.id_producto === idProducto);
+    if (!prod) return;
+
+    const itemExistente = carrito.find(item => item.id_producto === idProducto);
+    if (itemExistente) {
+      if (itemExistente.cantidad < prod.stock_total) {
+        itemExistente.cantidad++;
+      } else {
+        alert('Ha alcanzado el límite de stock disponible para este producto.');
+      }
+    } else {
+      carrito.push({
+        id_producto: prod.id_producto,
+        nombre: prod.nombre,
+        precio: parseFloat(prod.precio_venta || 0),
+        cantidad: 1,
+        stock: prod.stock_total
+      });
+    }
+
+    document.getElementById('input-buscador').value = '';
+    document.getElementById('resultados-busqueda').classList.add('d-none');
+    renderizarCarrito();
+  }
+
+  function cambiarCantidad(idProducto, nuevaCantidad) {
+    const cant = parseInt(nuevaCantidad, 10);
+    const item = carrito.find(i => i.id_producto === idProducto);
+    if (!item) return;
+
+    if (cant <= 0 || isNaN(cant)) {
+      eliminarDelCarrito(idProducto);
+    } else {
+      item.cantidad = cant;
+      renderizarCarrito();
+    }
+  }
+
+  function eliminarDelCarrito(idProducto) {
+    carrito = carrito.filter(item => item.id_producto !== idProducto);
+    renderizarCarrito();
+  }
+
+  function renderizarCarrito() {
+    const tbody = document.getElementById('carrito-body');
+    const msgVacio = document.getElementById('carrito-vacio-msg');
+    tbody.innerHTML = '';
+    totalGeneral = 0;
+
+    if (carrito.length === 0) {
+      msgVacio.classList.remove('d-none');
+    } else {
+      msgVacio.classList.add('d-none');
+    }
+
+    carrito.forEach(item => {
+      const subtotal = item.precio * item.cantidad;
+      totalGeneral += subtotal;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <input type="hidden" name="producto_id" value="${item.id_producto}">
+          <strong>${item.nombre}</strong>
+        </td>
+        <td>$${item.precio.toFixed(2)}</td>
+        <td>
+          <input type="number" name="cantidad" min="1" max="${item.stock}" class="form-control form-control-sm" value="${item.cantidad}" onchange="cambiarCantidad(${item.id_producto}, this.value)">
+        </td>
+        <td class="text-end fw-bold">$${subtotal.toFixed(2)}</td>
+        <td class="text-center">
+          <button type="button" class="btn btn-sm btn-outline-danger" onclick="eliminarDelCarrito(${item.id_producto})">
+            <i class="fas fa-trash"></i>
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('monto-total-display').textContent = `$${totalGeneral.toFixed(2)}`;
+    document.getElementById('header-total').textContent = `Total: $${totalGeneral.toFixed(2)}`;
+  }
+
+  function prepararModalCobro() {
+    if (carrito.length === 0) {
+      alert('Debe agregar al menos un producto al carrito.');
+      return;
+    }
+
+    document.getElementById('modal-total-pagar').value = `$${totalGeneral.toFixed(2)}`;
+    document.getElementById('modal-monto-recibido').value = '';
+    document.getElementById('modal-vuelto-display').textContent = '$0.00';
+    document.getElementById('modal-error-monto').classList.add('d-none');
+    document.getElementById('btn-confirmar-venta').disabled = false;
+
+    const modal = new bootstrap.Modal(document.getElementById('modalVuelto'));
+    modal.show();
+  }
+
+  function calcularVuelto() {
+    const recibidoInput = document.getElementById('modal-monto-recibido').value;
+    const recibido = parseFloat(recibidoInput || 0);
+    const vueltoSpan = document.getElementById('modal-vuelto-display');
+    const errorDiv = document.getElementById('modal-error-monto');
+    const btnConfirmar = document.getElementById('btn-confirmar-venta');
+
+    if (recibidoInput === '') {
+      vueltoSpan.textContent = '$0.00';
+      errorDiv.classList.add('d-none');
+      btnConfirmar.disabled = false;
+      return;
+    }
+
+    const vuelto = recibido - totalGeneral;
+
+    if (vuelto < 0) {
+      vueltoSpan.textContent = '$0.00';
+      errorDiv.classList.remove('d-none');
+      btnConfirmar.disabled = true;
+    } else {
+      vueltoSpan.textContent = `$${vuelto.toFixed(2)}`;
+      errorDiv.classList.add('d-none');
+      btnConfirmar.disabled = false;
+    }
+  }
+
+  function confirmarVenta() {
+    const recibido = document.getElementById('modal-monto-recibido').value;
+    document.getElementById('monto_recibido_hidden').value = recibido;
+    document.getElementById('formVenta').submit();
+  }
+</script>
