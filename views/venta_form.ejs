@@ -15,8 +15,8 @@
                         <select id="select-producto" class="form-select" required>
                             <option value="">Seleccione un producto...</option>
                             <% productos.forEach(p => { %>
-                                <option value="<%= p.id %>" data-precio="<%= p.precio %>" data-stock="<%= p.stock %>">
-                                    <%= p.nombre %> - $<%= Number(p.precio).toFixed(2) %> (Stock: <%= p.stock %>)
+                                <option value="<%= p.id_producto || p.id %>" data-precio="<%= p.precio_venta || p.precio %>" data-stock="<%= p.stock %>">
+                                    <%= p.nombre %> - <%= typeof formatoMoneda === 'function' ? formatoMoneda(p.precio_venta || p.precio) : '$' + Number(p.precio_venta || p.precio).toFixed(2) %>
                                 </option>
                             <% }) %>
                         </select>
@@ -25,7 +25,8 @@
                         <label for="cantidad-item" class="form-label">Cantidad</label>
                         <input type="number" id="cantidad-item" class="form-control" min="1" value="1" required>
                     </div>
-                    <button type="button" id="btn-agregar" class="btn btn-secondary w-100">Agregar a la Lista</button>
+                    <button type="button" id="btn-agregar" class="btn btn-secondary w-100" onclick="agregarItem()">Agregar a la Lista
+</button>
                 </form>
             </div>
         </div>
@@ -58,7 +59,7 @@
                     <h3 class="text-success">$<span id="total-venta">0.00</span></h3>
                 </div>
 
-                <form id="form-venta" action="/ventas" method="POST">
+                <form id="form-venta" action="/ventas" method="POST" onsubmit="return procesarVenta(event)">
                     <!-- Input oculto para enviar los items en JSON -->
                     <input type="hidden" name="items" id="input-items">
 
@@ -67,7 +68,10 @@
                         <input type="number" step="0.01" min="0" id="monto_pagado" class="form-control" placeholder="Ingrese el monto entregado por el cliente" required>
                     </div>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100">Vender</button>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg w-100">Procesar Venta</button>
+                        <a class="btn btn-outline-secondary btn-lg" href="/ventas">Cancelar</a>
+                    </div>
                 </form>
             </div>
         </div>
@@ -91,3 +95,107 @@
         </div>
     </div>
 </div>
+
+<script>
+    let carrito = [];
+
+    function agregarItem() {
+        const select = document.getElementById('select-producto');
+        const cantidadInput = document.getElementById('cantidad-item');
+        
+        const productoId = select.value;
+        const optionSeleccionada = select.options[select.selectedIndex];
+        
+        if (!productoId) {
+            alert('Por favor, seleccione un producto');
+            return;
+        }
+
+        const nombre = optionSeleccionada.text.split(' - ')[0];
+        const precio = parseFloat(optionSeleccionada.getAttribute('data-precio'));
+        const cantidad = parseInt(cantidadInput.value);
+
+        if (isNaN(cantidad) || cantidad <= 0) {
+            alert('Ingrese una cantidad válida');
+            return;
+        }
+
+        // Si ya existe en el carrito, sumamos la cantidad
+        const existeIndex = carrito.findIndex(item => item.id == productoId);
+        if (existeIndex !== -1) {
+            carrito[existeIndex].cantidad += cantidad;
+            carrito[existeIndex].subtotal = carrito[existeIndex].cantidad * carrito[existeIndex].precio;
+        } else {
+            carrito.push({
+                id: productoId,
+                nombre: nombre,
+                precio: precio,
+                cantidad: cantidad,
+                subtotal: precio * cantidad
+            });
+        }
+
+        // Resetear selección básica
+        select.value = '';
+        cantidadInput.value = 1;
+
+        actualizarTabla();
+    }
+
+    function eliminarItem(index) {
+        carrito.splice(index, 1);
+        actualizarTabla();
+    }
+
+    function actualizarTabla() {
+        const tbody = document.getElementById('lista-items');
+        tbody.innerHTML = '';
+        let total = 0;
+
+        carrito.forEach((item, index) => {
+            total += item.subtotal;
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.nombre}</td>
+                <td>$${item.precio.toFixed(2)}</td>
+                <td>${item.cantidad}</td>
+                <td>$${item.subtotal.toFixed(2)}</td>
+                <td>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="eliminarItem(${index})">
+                        &times;
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('total-venta').innerText = total.toFixed(2);
+        document.getElementById('input-items').value = JSON.stringify(carrito);
+    }
+
+    function procesarVenta(e) {
+        e.preventDefault();
+        
+        const totalVenta = parseFloat(document.getElementById('total-venta').innerText);
+        const montoPagado = parseFloat(document.getElementById('monto_pagado').value);
+
+        if (isNaN(montoPagado) || montoPagado < totalVenta) {
+            alert('El monto recibido debe ser mayor o igual al total de la venta.');
+            return false;
+        }
+
+        const vuelto = montoPagado - totalVenta;
+        document.getElementById('mensaje-vuelto').innerText = `El vuelto para el cliente es: $${vuelto.toFixed(2)}`;
+
+        // Mostrar Modal de Bootstrap
+        const modalElement = document.getElementById('modalVuelto');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+
+        document.getElementById('btn-confirmar-finalizar').onclick = function() {
+            document.getElementById('form-venta').submit();
+        };
+
+        return false;
+    }
+</script>
