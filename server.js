@@ -6,7 +6,15 @@
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const { db, formatoFechaMostrar, fechaAIso, formatoMoneda } = require('./db');
+const { db, 
+  formatoFechaMostrar, 
+  fechaAIso, 
+  formatoMoneda,
+  formatoBolivares,
+  getTasaActual,
+  getTasaByDate,
+  exportarVentasPDF,
+  exportarProductosPDF } = require('./db');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 
@@ -62,8 +70,27 @@ function requiereAdmin(req, res, next) {
   return res.status(403).send('Acceso denegado: se requiere rol admin.');
 }
 
+function fechaAValid(fechaDisplay) {
+  if (!fechaDisplay) return null;
+  // Si viene en formato dd/mm/yyyy
+  if (fechaDisplay.includes('/')) {
+    const parts = fechaDisplay.split('/');
+    if (parts.length === 3) {
+      const dd = parts[0].padStart(2, '0');
+      const mm = parts[1].padStart(2, '0');
+      const yyyy = parts[2];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return fechaDisplay;
+  }
+  // Si ya viene en formato ISO o está vacío
+  return fechaDisplay;
+}
+
 app.locals.formatoFechaMostrar = formatoFechaMostrar;
 app.locals.formatoMoneda = formatoMoneda;
+app.locals.formatoBolivares = formatoBolivares;
+
 
 // --- Rutas de autenticación ---
 app.get('/login', (req, res) => {
@@ -89,10 +116,59 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// --- Rutas Tasa de Cambio ---
+app.get('/tasa-cambio', requiereLogin, requiereAdmin, (req, res) => {
+  const historial = db.prepare('SELECT * FROM TasaCambio ORDER BY fecha DESC LIMIT 30').all();
+  const tasaActual = getTasaActual();
+  res.render('tasa_cambio', { tasaActual, historial });
+});
+
+app.post('/tasa-cambio', requiereLogin, requiereAdmin, (req, res) => {
+  try {
+    const { valor } = req.body;
+    const tasaNum = Number(valor);
+    if (!tasaNum || tasaNum <= 0) {
+      return res.status(400).send('Valor de tasa inválido');
+    }
+
+    const fecha = new Date().toISOString().slice(0, 10);
+    const idUsuario = req.session.usuario.Id_usuario;
+
+    // Verificar si ya existe una tasa para hoy
+    const existente = db.prepare('SELECT id_tasa FROM TasaCambio WHERE fecha = ?').get(fecha);
+    
+    // Usar transacción para actualizar precios en bolívares
+    const actualizarTasaTx = db.transaction(() => {
+      if (existente) {
+        // Actualizar la tasa existente
+        db.prepare('UPDATE TasaCambio SET valor = ?, creado_por = ? WHERE fecha = ?')
+          .run(tasaNum, idUsuario, fecha);
+      } else {
+        // Insertar nueva tasa
+        db.prepare('INSERT INTO TasaCambio (valor, fecha, creado_por) VALUES (?, ?, ?)')
+          .run(tasaNum, fecha, idUsuario);
+      }
+
+      // Actualizar precios en bolívares de todos los productos
+      db.prepare(`UPDATE Productos SET precio_venta_bs = precio_venta * ?`).run(tasaNum);
+      
+      // Actualizar precios en bolívares de todos los lotes
+      db.prepare(`UPDATE Lotes SET precio_venta_bs = precio_venta * ?`).run(tasaNum);
+    });
+
+    actualizarTasaTx();
+    res.redirect('/tasa-cambio');
+  } catch (error) {
+    console.error('Error al actualizar tasa:', error);
+    res.status(500).send('Error al actualizar la tasa de cambio: ' + error.message);
+  }
+});
+
 // --- Dashboard ---
 app.get('/', requiereLogin, (req, res) => {
   try {
     const hoy = new Date().toISOString().slice(0, 10);
+    const tasaActual = getTasaActual();
 
     // 1. Total de productos
     const productos = db.prepare('SELECT id_producto FROM Productos').all();
@@ -147,7 +223,8 @@ app.get('/', requiereLogin, (req, res) => {
       ventasHoy,
       totalHoy,
       alertasStock,
-      alertasVencimiento
+      alertasVencimiento,
+      tasaActual
     });
 
   } catch (error) {
@@ -180,149 +257,249 @@ app.post('/categorias', requiereLogin, (req, res) => {
 });
 
 // --- Rutas Productos ---
+// --- Rutas Productos ---
 app.get('/productos', requiereLogin, (req, res) => {
   const productos = db.prepare(`
     SELECT p.*, c.nombre AS categoria_nombre
     FROM Productos p LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
     ORDER BY p.nombre
   `).all();
-  res.render('productos', { productos });
+  const tasaActual = getTasaActual();
+  res.render('productos', { productos, tasaActual: tasaActual || { valor: 0 } });
 });
 
 app.get('/productos/nuevo', requiereLogin, (req, res) => {
   const categorias = db.prepare('SELECT * FROM Categorias').all();
-  res.render('producto_form', { producto: null, categorias, error: null });
+  const tasaActual = getTasaActual();
+  res.render('producto_form', { 
+    producto: null, 
+    categorias, 
+    error: null,
+    tasaActual: tasaActual || { valor: 0 }
+  });
 });
 
 app.post('/productos', requiereLogin, (req, res) => {
-  const { nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, fecha_vencimiento } = req.body;
+  const { nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, precio_compra, fecha_vencimiento } = req.body;
+  
   if (!nombre || Number(stock_total) < 0) {
     const categorias = db.prepare('SELECT * FROM Categorias').all();
-    return res.render('producto_form', { producto: null, categorias, error: 'Campos obligatorios o inválidos.' });
+    const tasaActual = getTasaActual();
+    return res.render('producto_form', { 
+      producto: null, 
+      categorias, 
+      error: 'Campos obligatorios o inválidos.',
+      tasaActual: tasaActual || { valor: 0 }
+    });
   }
+
+  // Verificar que el código no exista ya
+  if (codigo && codigo.trim() !== '') {
+    const existente = db.prepare('SELECT id_producto FROM Productos WHERE codigo = ?').get(codigo.trim());
+    if (existente) {
+      const categorias = db.prepare('SELECT * FROM Categorias').all();
+      const tasaActual = getTasaActual();
+      return res.render('producto_form', { 
+        producto: null, 
+        categorias, 
+        error: 'El código ya existe. Use un código único.',
+        tasaActual: tasaActual || { valor: 0 }
+      });
+    }
+  }
+
   const isoFecha = fechaAValid(fecha_vencimiento);
-  db.prepare(`INSERT INTO Productos
-    (nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, fecha_vencimiento)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    nombre, codigo, descripcion || null, id_categoria || null, Number(stock_total || 0), Number(stock_minimo || 0), Number(precio_venta || 0), isoFecha
-  );
-  res.redirect('/productos');
+  const precioNum = Number(precio_venta || 0);
+  const precioCompraNum = Number(precio_compra || 0);
+  const stockNum = Number(stock_total || 0);
+  const tasaActual = getTasaActual();
+  const tasaValor = tasaActual ? tasaActual.valor : 0;
+  const precioBs = precioNum * tasaValor;
+
+  try {
+    const crearProductoConLote = db.transaction(() => {
+      const result = db.prepare(`INSERT INTO Productos
+        (nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, precio_venta_bs, fecha_vencimiento)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        nombre, 
+        codigo && codigo.trim() !== '' ? codigo.trim() : null, 
+        descripcion || null, 
+        id_categoria || null, 
+        stockNum, 
+        Number(stock_minimo || 0), 
+        precioNum, 
+        precioBs, 
+        isoFecha
+      );
+
+      const idProducto = result.lastInsertRowid;
+      const fechaIngreso = new Date().toISOString().slice(0, 10);
+
+      db.prepare(`INSERT INTO Lotes
+        (id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, precio_venta_bs, fecha_ingreso, fecha_vencimiento)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        idProducto,
+        stockNum,
+        stockNum,
+        precioCompraNum,
+        precioNum,
+        precioBs,
+        fechaIngreso,
+        isoFecha
+      );
+    });
+
+    crearProductoConLote();
+    res.redirect('/productos');
+  } catch (error) {
+    console.error('Error al crear producto:', error);
+    const categorias = db.prepare('SELECT * FROM Categorias').all();
+    const tasaActual = getTasaActual();
+    res.render('producto_form', { 
+      producto: null, 
+      categorias, 
+      error: 'Error al crear producto: ' + error.message,
+      tasaActual: tasaActual || { valor: 0 }
+    });
+  }
 });
 
 app.get('/productos/:id/editar', requiereLogin, (req, res) => {
   const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(req.params.id);
   if (!producto) return res.redirect('/productos');
+  
+  // Obtener el lote más reciente para mostrar precio de compra
+  const lote = db.prepare('SELECT precio_compra FROM Lotes WHERE id_producto = ? ORDER BY fecha_ingreso DESC LIMIT 1').get(req.params.id);
+  if (lote) {
+    producto.precio_compra = lote.precio_compra;
+  }
+  
   const categorias = db.prepare('SELECT * FROM Categorias').all();
-  res.render('producto_form', { producto, categorias, error: null });
+  const tasaActual = getTasaActual();
+  res.render('producto_form', { 
+    producto, 
+    categorias, 
+    error: null,
+    tasaActual: tasaActual || { valor: 0 }
+  });
 });
 
 app.post('/productos/:id/editar', requiereLogin, (req, res) => {
+  // Permitir edición solo a admin
   if (req.session.usuario.rol !== 'admin') {
     return res.status(403).send('Solo admin puede editar productos.');
   }
-  const { nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, fecha_vencimiento } = req.body;
+
+  const { nombre, codigo, descripcion, id_categoria, stock_total, stock_minimo, precio_venta, precio_compra, fecha_vencimiento } = req.body;
+  const idProducto = req.params.id;
+  
+  // Verificar que el código no exista ya (excluyendo el producto actual)
+  if (codigo && codigo.trim() !== '') {
+    const existente = db.prepare('SELECT id_producto FROM Productos WHERE codigo = ? AND id_producto != ?').get(codigo.trim(), idProducto);
+    if (existente) {
+      const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(idProducto);
+      const categorias = db.prepare('SELECT * FROM Categorias').all();
+      const tasaActual = getTasaActual();
+      return res.render('producto_form', { 
+        producto, 
+        categorias, 
+        error: 'El código ya existe. Use un código único.',
+        tasaActual: tasaActual || { valor: 0 }
+      });
+    }
+  }
+
   const isoFecha = fechaAValid(fecha_vencimiento);
-  db.prepare(`UPDATE Productos SET
-    nombre = ?, codigo = ?, descripcion = ?, id_categoria = ?, stock_total = ?, stock_minimo = ?, precio_venta = ?, fecha_vencimiento = ?
-    WHERE id_producto = ?`).run(
-    nombre, codigo, descripcion || null, id_categoria || null, Number(stock_total || 0), Number(stock_minimo || 0), Number(precio_venta || 0), isoFecha, req.params.id
-  );
-  res.redirect('/productos');
+  const precioNum = Number(precio_venta || 0);
+  const stockNum = Number(stock_total || 0);
+  const tasaActual = getTasaActual();
+  const tasaValor = tasaActual ? tasaActual.valor : 0;
+  const precioBs = precioNum * tasaValor;
+
+  try {
+    const actualizarProducto = db.transaction(() => {
+      // Actualizar producto
+      db.prepare(`UPDATE Productos SET
+        nombre = ?, codigo = ?, descripcion = ?, id_categoria = ?, stock_total = ?, stock_minimo = ?, 
+        precio_venta = ?, precio_venta_bs = ?, fecha_vencimiento = ?
+        WHERE id_producto = ?`).run(
+        nombre, 
+        codigo && codigo.trim() !== '' ? codigo.trim() : null, 
+        descripcion || null, 
+        id_categoria || null, 
+        stockNum, 
+        Number(stock_minimo || 0), 
+        precioNum, 
+        precioBs, 
+        isoFecha, 
+        idProducto
+      );
+
+      // Actualizar el precio del lote más reciente
+      const loteReciente = db.prepare('SELECT id_lote FROM Lotes WHERE id_producto = ? ORDER BY fecha_ingreso DESC LIMIT 1').get(idProducto);
+      if (loteReciente) {
+        db.prepare('UPDATE Lotes SET precio_venta = ?, precio_venta_bs = ? WHERE id_lote = ?')
+          .run(precioNum, precioBs, loteReciente.id_lote);
+      }
+    });
+
+    actualizarProducto();
+    res.redirect('/productos');
+  } catch (error) {
+    console.error('Error al actualizar producto:', error);
+    const producto = db.prepare('SELECT * FROM Productos WHERE id_producto = ?').get(idProducto);
+    const categorias = db.prepare('SELECT * FROM Categorias').all();
+    const tasaActual = getTasaActual();
+    res.render('producto_form', { 
+      producto, 
+      categorias, 
+      error: 'Error al actualizar producto: ' + error.message,
+      tasaActual: tasaActual || { valor: 0 }
+    });
+  }
 });
 
 app.post('/productos/:id/eliminar', requiereLogin, (req, res) => {
+  // Permitir eliminación solo a admin
   if (req.session.usuario.rol !== 'admin') {
     return res.status(403).send('Solo admin puede eliminar productos.');
   }
-  db.prepare('DELETE FROM Productos WHERE id_producto = ?').run(req.params.id);
-  res.redirect('/productos');
+
+  const idProducto = req.params.id;
+  
+  try {
+    db.transaction(() => {
+      // Eliminar lotes primero (por la relación de clave foránea)
+      db.prepare('DELETE FROM Lotes WHERE id_producto = ?').run(idProducto);
+      // Eliminar producto
+      db.prepare('DELETE FROM Productos WHERE id_producto = ?').run(idProducto);
+    })();
+    res.redirect('/productos');
+  } catch (error) {
+    console.error('Error al eliminar producto:', error);
+    res.status(500).send('Error al eliminar producto: ' + error.message);
+  }
 });
 
 // --- Rutas Lotes ---
 app.get('/lotes', requiereLogin, (req, res) => {
   const lotes = db.prepare(`
     SELECT l.*, p.nombre AS producto_nombre
-    FROM Lotes l JOIN Productos p ON l.id_producto = p.id_producto
+    FROM Lotes l 
+    JOIN Productos p ON l.id_producto = p.id_producto
     ORDER BY l.fecha_ingreso DESC
   `).all();
   res.render('lotes', { lotes });
 });
 
 app.get('/lotes/nuevo', requiereLogin, (req, res) => {
-  const productos = db.prepare('SELECT * FROM Productos').all();
-  res.render('lote_form', { lote: null, productos, error: null });
-});
-
-// Alias opcional por si el formulario envía a /lotes
-app.post('/lotes', requiereLogin, (req, res) => {
-  res.redirect(307, '/lotes/nuevo');
+  // Redirigir a productos ya que ahora se crean automáticamente
+  res.redirect('/productos');
 });
 
 app.post('/lotes/nuevo', requiereLogin, (req, res) => {
-  try {
-    const { id_producto, producto_id, cantidad, cantidad_inicial, precio_compra, precio_venta, fecha_vencimiento } = req.body;
-
-    // Normalizar los valores recibidos desde el formulario EJS
-    const idProd = id_producto || producto_id;
-    const cantNum = Number(cantidad || cantidad_inicial || 0);
-
-    if (!idProd || cantNum <= 0) {
-      const productos = db.prepare('SELECT * FROM Productos ORDER BY nombre ASC').all();
-      return res.render('lote_form', { lote: null, productos, error: 'Debe seleccionar un producto y una cantidad válida.' });
-    }
-
-    const fechaIngreso = new Date().toISOString().slice(0, 10);
-    const isoFechaVenc = fechaAValid(fecha_vencimiento);
-
-    const registrarLoteTx = db.transaction(() => {
-      db.prepare(`
-        INSERT INTO Lotes (id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        idProd,
-        cantNum,
-        cantNum,
-        Number(precio_compra || 0),
-        Number(precio_venta || 0),
-        fechaIngreso,
-        isoFechaVenc
-      );
-
-      // Incrementar el stock total del producto
-      db.prepare(`UPDATE Productos SET stock_total = stock_total + ? WHERE id_producto = ?`).run(cantNum, idProd);
-    });
-
-    registrarLoteTx();
-    res.redirect('/lotes');
-  } catch (error) {
-    console.error('Error al registrar lote:', error);
-    const productos = db.prepare('SELECT * FROM Productos ORDER BY nombre ASC').all();
-    res.render('lote_form', { lote: null, productos, error: 'Error al procesar el lote: ' + error.message });
-  }
-});
-
-app.get('/lotes/:id/editar', requiereLogin, (req, res) => {
-  if (req.session.usuario.rol !== 'admin') {
-    return res.status(403).send('Solo admin puede editar lotes.');
-  }
-  const lote = db.prepare('SELECT * FROM Lotes WHERE id_lote = ?').get(req.params.id);
-  if (!lote) return res.redirect('/lotes');
-  const productos = db.prepare('SELECT * FROM Productos').all();
-  res.render('lote_form', { lote, productos, error: null });
-});
-
-app.post('/lotes/:id/editar', requiereLogin, (req, res) => {
-  if (req.session.usuario.rol !== 'admin') {
-    return res.status(403).send('Solo admin puede editar lotes.');
-  }
-  const { id_producto, cantidad_inicial, cantidad_actual, precio_compra, precio_venta, fecha_ingreso, fecha_vencimiento } = req.body;
-  db.prepare(`UPDATE Lotes SET
-    id_producto = ?, cantidad_inicial = ?, cantidad_actual = ?, precio_compra = ?, precio_venta = ?, fecha_ingreso = ?, fecha_vencimiento = ?
-    WHERE id_lote = ?`).run(
-    id_producto, Number(cantidad_inicial || 0), Number(cantidad_actual || 0),
-    Number(precio_compra || 0), Number(precio_venta || 0), fechaAValid(fecha_ingreso), fechaAValid(fecha_vencimiento), req.params.id
-  );
-  res.redirect('/lotes');
+  // Redirigir a productos ya que ahora se crean automáticamente
+  res.redirect('/productos');
 });
 
 // --- Rutas Usuarios ---
@@ -353,53 +530,77 @@ app.get('/ventas', requiereLogin, (req, res) => {
 
 app.get('/ventas/nuevo', requiereLogin, (req, res) => {
   const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
-  res.render('venta_form', { productos, error: null, venta: null, detalles: [] });
+  const tasaActual = getTasaActual();
+  res.render('venta_form', { 
+    productos, 
+    error: null, 
+    venta: null, 
+    detalles: [],
+    tasaActual: tasaActual || { valor: 0 }
+  });
 });
 
-function fechaAValid(fechaDisplay) {
-  if (!fechaDisplay) return null;
-  if (fechaDisplay.includes('/')) {
-    const parts = fechaDisplay.split('/');
-    if (parts.length === 3) {
-      return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-    }
-    return fechaDisplay;
-  }
-  return fechaDisplay;
-}
+app.get('/ventas/:id', requiereLogin, (req, res) => {
+  const id = req.params.id;
+  const venta = db.prepare('SELECT * FROM Ventas WHERE id_venta = ?').get(id);
+  if (!venta) return res.redirect('/ventas');
+  
+  const detalles = db.prepare(`
+    SELECT dv.*, p.nombre as producto_nombre, p.codigo 
+    FROM Detalle_ventas dv 
+    JOIN Productos p ON dv.id_producto = p.id_producto 
+    WHERE dv.id_venta = ?
+  `).all(id);
+  
+  res.render('venta_detalle', { venta, detalles });
+});
 
-// POST /ventas - Registrar Venta Simplificada
+// POST /ventas - Registrar Venta
 app.post('/ventas', requiereLogin, (req, res) => {
   try {
     let { producto_id, cantidad, monto_recibido } = req.body;
 
-    if (!producto_id) {
+    if (!producto_id || producto_id.length === 0) {
       const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
-      return res.render('venta_form', { productos, error: 'Debe incluir al menos un producto en la venta.', venta: null, detalles: [] });
+      const tasaActual = getTasaActual();
+      return res.render('venta_form', { 
+        productos, 
+        error: 'Debe incluir al menos un producto en la venta.', 
+        venta: null, 
+        detalles: [],
+        tasaActual: tasaActual || { valor: 0 }
+      });
     }
 
-    // Normalizar a arreglos si se envía un solo ítem
     if (!Array.isArray(producto_id)) producto_id = [producto_id];
     if (!Array.isArray(cantidad)) cantidad = [cantidad];
 
     const fechaHoy = new Date().toISOString().slice(0, 10);
     const idUsuario = req.session.usuario ? req.session.usuario.Id_usuario : null;
+    const tasaActual = getTasaActual();
+    const tasaValor = tasaActual ? tasaActual.valor : 0;
 
-    // Sanitizar monto_recibido para evitar errores con cadenas vacías
-    const montoNumerico = (monto_recibido !== undefined && monto_recibido !== '' && !isNaN(monto_recibido)) 
-      ? Number(monto_recibido) 
-      : null;
+    // 🔥 CORREGIDO: Asegurar que monto_recibido sea un número válido
+    let montoNumerico = null;
+    if (monto_recibido !== undefined && monto_recibido !== '' && monto_recibido !== null) {
+      // Reemplazar coma por punto si existe
+      const montoStr = String(monto_recibido).replace(',', '.');
+      const parsed = parseFloat(montoStr);
+      if (!isNaN(parsed) && parsed > 0) {
+        montoNumerico = parsed;
+      }
+    }
 
     const procesarVentaTx = db.transaction(() => {
-      // 1. Crear el registro principal de la venta
+      // 🔥 CORREGIDO: Usar montoNumerico en lugar del valor original
       const resultVenta = db.prepare(
-        'INSERT INTO Ventas (fecha, total, monto_recibido, id_usuario, anulada) VALUES (?, 0, ?, ?, 0)'
-      ).run(fechaHoy, montoNumerico, idUsuario);
+        'INSERT INTO Ventas (fecha, total, total_bs, monto_recibido, id_usuario, anulada, tasa_cambio) VALUES (?, 0, 0, ?, ?, 0, ?)'
+      ).run(fechaHoy, montoNumerico, idUsuario, tasaValor);
 
       const idVenta = resultVenta.lastInsertRowid;
       let totalVenta = 0;
+      let totalVentaBs = 0;
 
-      // 2. Procesar cada producto ingresado
       for (let i = 0; i < producto_id.length; i++) {
         const idp = Number(producto_id[i]);
         const cantRequerida = Number(cantidad[i]);
@@ -412,8 +613,6 @@ app.post('/ventas', requiereLogin, (req, res) => {
         }
 
         let restante = cantRequerida;
-
-        // Buscar lotes disponibles por FIFO (el más antiguo primero)
         const lotes = db.prepare(`
           SELECT * FROM Lotes 
           WHERE id_producto = ? AND cantidad_actual > 0 
@@ -427,35 +626,38 @@ app.post('/ventas', requiereLogin, (req, res) => {
           const precioUnit = (lote.precio_venta && lote.precio_venta > 0) 
             ? lote.precio_venta 
             : (producto.precio_venta || 0);
+          const precioUnitBs = (lote.precio_venta_bs && lote.precio_venta_bs > 0)
+            ? lote.precio_venta_bs
+            : (producto.precio_venta_bs || 0);
 
           db.prepare(`
-            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) 
-            VALUES (?, ?, ?, ?, ?)
-          `).run(idVenta, idp, lote.id_lote, uso, precioUnit);
+            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario, precio_unitario_bs) 
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(idVenta, idp, lote.id_lote, uso, precioUnit, precioUnitBs);
 
           db.prepare('UPDATE Lotes SET cantidad_actual = cantidad_actual - ? WHERE id_lote = ?').run(uso, lote.id_lote);
 
           totalVenta += uso * precioUnit;
+          totalVentaBs += uso * precioUnitBs;
           restante -= uso;
         }
 
-        // Si la cantidad requerida supera lo que había en lotes pero hay stock general del producto
         if (restante > 0) {
           const precioUnit = producto.precio_venta || 0;
+          const precioUnitBs = producto.precio_venta_bs || 0;
           db.prepare(`
-            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario) 
-            VALUES (?, ?, NULL, ?, ?)
-          `).run(idVenta, idp, restante, precioUnit);
+            INSERT INTO Detalle_ventas (id_venta, id_producto, id_lote, cantidad, precio_unitario, precio_unitario_bs) 
+            VALUES (?, ?, NULL, ?, ?, ?)
+          `).run(idVenta, idp, restante, precioUnit, precioUnitBs);
 
           totalVenta += restante * precioUnit;
+          totalVentaBs += restante * precioUnitBs;
         }
 
-        // Actualizar el stock acumulado del producto
         db.prepare('UPDATE Productos SET stock_total = stock_total - ? WHERE id_producto = ?').run(cantRequerida, idp);
       }
 
-      // 3. Actualizar el total definitivo calculado
-      db.prepare('UPDATE Ventas SET total = ? WHERE id_venta = ?').run(totalVenta, idVenta);
+      db.prepare('UPDATE Ventas SET total = ?, total_bs = ? WHERE id_venta = ?').run(totalVenta, totalVentaBs, idVenta);
     });
 
     procesarVentaTx();
@@ -464,13 +666,28 @@ app.post('/ventas', requiereLogin, (req, res) => {
   } catch (e) {
     console.error('Error al registrar venta:', e);
     const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
+    const tasaActual = getTasaActual();
     res.render('venta_form', { 
       productos, 
       error: 'Error al registrar venta: ' + e.message, 
       venta: null, 
-      detalles: [] 
+      detalles: [],
+      tasaActual: tasaActual || { valor: 0 }
     });
   }
+});
+
+
+app.get('/ventas/nuevo', requiereLogin, (req, res) => {
+  const productos = db.prepare('SELECT * FROM Productos WHERE stock_total > 0 ORDER BY nombre ASC').all();
+  const tasaActual = getTasaActual(); // Obtener la tasa actual
+  res.render('venta_form', { 
+    productos, 
+    error: null, 
+    venta: null, 
+    detalles: [],
+    tasaActual: tasaActual || { valor: 0 } // Pasar la tasa con un valor por defecto
+  });
 });
 
 app.get('/ventas/:id/editar', requiereLogin, (req, res) => {
@@ -479,7 +696,14 @@ app.get('/ventas/:id/editar', requiereLogin, (req, res) => {
   if (!venta) return res.redirect('/ventas');
   const detalles = db.prepare('SELECT dv.*, p.nombre as producto_nombre FROM Detalle_ventas dv JOIN Productos p ON dv.id_producto = p.id_producto WHERE dv.id_venta = ?').all(id);
   const productos = db.prepare('SELECT * FROM Productos').all();
-  res.render('venta_form', { productos, error: null, venta, detalles });
+  const tasaActual = getTasaActual();
+  res.render('venta_form', { 
+    productos, 
+    error: null, 
+    venta, 
+    detalles,
+    tasaActual: tasaActual || { valor: 0 }
+  });
 });
 
 app.post('/ventas/:id/editar', requiereLogin, (req, res) => {
@@ -578,59 +802,66 @@ app.post('/ventas/:id/anular', requiereLogin, (req, res) => {
   }
 });
 
-// --- Export CSV ---
+// --- Export PDF ---
 app.get('/export/productos', requiereLogin, requiereAdmin, (req, res) => {
   const productos = db.prepare(`
-    SELECT p.*, c.nombre as categoria_nombre FROM Productos p LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
+    SELECT p.*, c.nombre as categoria_nombre FROM Productos p 
+    LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
   `).all();
-  let csv = 'id_producto,nombre,codigo,categoria,stock_total,stock_minimo,precio_venta,fecha_vencimiento\n';
-  for (const p of productos) {
-    csv += `${p.id_producto},"${p.nombre}","${p.codigo || ''}","${p.categoria_nombre || ''}",${p.stock_total},${p.stock_minimo},${p.precio_venta || 0},"${p.fecha_vencimiento || ''}"\n`;
-  }
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename=productos.csv');
-  res.send(csv);
+  exportarProductosPDF(productos, res);
 });
 
 app.get('/export/ventas', requiereLogin, requiereAdmin, (req, res) => {
-  const ventas = db.prepare('SELECT v.*, u.nombre as usuario FROM Ventas v LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario ORDER BY v.fecha DESC').all();
-  let csv = 'id_venta,fecha,total,monto_recibido,usuario,anulada\n';
-  for (const v of ventas) {
-    csv += `${v.id_venta},${v.fecha},${v.total},${v.monto_recibido || ''},"${v.usuario || ''}",${v.anulada}\n`;
-  }
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename=ventas.csv');
-  res.send(csv);
+  const ventas = db.prepare(`
+    SELECT v.*, u.nombre as usuario_nombre 
+    FROM Ventas v 
+    LEFT JOIN Usuarios u ON v.id_usuario = u.Id_usuario 
+    ORDER BY v.fecha DESC
+  `).all();
+  exportarVentasPDF(ventas, res);
 });
 
-// --- API de búsqueda ---
+// --- Barra de búsqueda mejorada (API) ---
 app.get('/api/productos/buscar', requiereLogin, (req, res) => {
   const q = req.query.q || '';
-  const filas = db.prepare('SELECT * FROM Productos WHERE nombre LIKE ? OR codigo LIKE ? LIMIT 20').all(`%${q}%`, `%${q}%`);
+  const query = `%${q}%`;
+  const filas = db.prepare(`
+    SELECT p.*, c.nombre as categoria_nombre 
+    FROM Productos p 
+    LEFT JOIN Categorias c ON p.id_categoria = c.id_categoria
+    WHERE p.nombre LIKE ? OR p.codigo LIKE ? 
+    LIMIT 20
+  `).all(query, query);
   res.json(filas);
 });
 
 // Ruta de Reportes
-// Ruta para ver los Reportes (Cálculo en tiempo real desde la BD)
 app.get('/reportes', requiereLogin, (req, res) => {
   try {
     const hoy = new Date().toISOString().slice(0, 10);
+    const tasaActual = getTasaActual();
 
-    // 1. Total vendido hoy
-    const ventasHoy = db.prepare('SELECT SUM(total) AS total FROM Ventas WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)').get(hoy);
-    const totalVentasHoy = ventasHoy.total || 0;
+    // 1. Total vendido hoy en USD y Bs
+    const ventasHoy = db.prepare('SELECT SUM(total) AS total, SUM(total_bs) AS total_bs FROM Ventas WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)').get(hoy);
+    const totalVentasHoyUSD = ventasHoy ? (ventasHoy.total || 0) : 0;
+    const totalVentasHoyBs = ventasHoy ? (ventasHoy.total_bs || 0) : 0;
 
     // 2. Cantidad de ventas realizadas hoy
     const cantHoy = db.prepare('SELECT COUNT(*) AS cantidad FROM Ventas WHERE fecha = ? AND (anulada = 0 OR anulada IS NULL)').get(hoy);
-    const cantidadVentasHoy = cantHoy.cantidad || 0;
+    const cantidadVentasHoy = cantHoy ? cantHoy.cantidad : 0;
 
-    // 3. Total histórico de ventas (no anuladas)
-    const ventasHistorico = db.prepare('SELECT SUM(total) AS total FROM Ventas WHERE (anulada = 0 OR anulada IS NULL)').get();
-    const totalVentasHistorico = ventasHistorico.total || 0;
+    // 3. Total histórico de ventas (no anuladas) en USD y Bs
+    const ventasHistorico = db.prepare('SELECT SUM(total) AS total, SUM(total_bs) AS total_bs FROM Ventas WHERE (anulada = 0 OR anulada IS NULL)').get();
+    const totalVentasHistoricoUSD = ventasHistorico ? (ventasHistorico.total || 0) : 0;
+    const totalVentasHistoricoBs = ventasHistorico ? (ventasHistorico.total_bs || 0) : 0;
 
-    // 4. Top 5 productos más vendidos
+    // 4. Top 5 productos más vendidos (con USD y Bs)
     const topProductos = db.prepare(`
-      SELECT p.nombre, SUM(dv.cantidad) AS total_vendido, SUM(dv.cantidad * dv.precio_unitario) AS total_recaudado
+      SELECT 
+        p.nombre, 
+        SUM(dv.cantidad) AS total_vendido, 
+        SUM(dv.cantidad * dv.precio_unitario) AS total_recaudado,
+        SUM(dv.cantidad * dv.precio_unitario_bs) AS total_recaudado_bs
       FROM Detalle_ventas dv
       JOIN Ventas v ON dv.id_venta = v.id_venta
       JOIN Productos p ON dv.id_producto = p.id_producto
@@ -651,11 +882,14 @@ app.get('/reportes', requiereLogin, (req, res) => {
     `).all();
 
     res.render('reportes', {
-      totalVentasHoy,
+      totalVentasHoyUSD,
+      totalVentasHoyBs,
       cantidadVentasHoy,
-      totalVentasHistorico,
+      totalVentasHistoricoUSD,
+      totalVentasHistoricoBs,
       topProductos,
-      ultimasVentas
+      ultimasVentas,
+      tasaActual: tasaActual || { valor: 0, fecha: new Date().toISOString().slice(0, 10) }
     });
   } catch (error) {
     console.error('Error al generar reportes:', error);

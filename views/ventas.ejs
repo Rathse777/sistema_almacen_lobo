@@ -29,9 +29,10 @@
             <th>ID Venta</th>
             <th>Fecha</th>
             <th>Atendido por</th>
-            <th class="text-end">Total</th>
-            <th class="text-end">Monto Pagado</th>
-            <th class="text-end">Vuelto</th>
+            <th class="text-end">Total ($)</th>
+            <th class="text-end">Total (Bs)</th>
+            <th class="text-end">Monto Pagado (Bs)</th>
+            <th class="text-end">Vuelto (Bs)</th>
             <th class="text-center">Estado</th>
             <th class="text-center">Acciones</th>
           </tr>
@@ -43,12 +44,19 @@
               <td><%= formatoFechaMostrar(v.fecha) %></td>
               <td><%= v.usuario_nombre || 'Sistema' %></td>
               <td class="text-end fw-bold"><%= formatoMoneda(v.total) %></td>
-              <td class="text-end"><%= v.monto_recibido ? formatoMoneda(v.monto_recibido) : '-' %></td>
+              <td class="text-end fw-bold text-success"><%= formatoBolivares(v.total_bs) %></td>
               <td class="text-end">
-                <% if (v.monto_recibido && v.total) { %>
-                  <%= formatoMoneda(v.monto_recibido - v.total) %>
+                <% if (v.monto_recibido && v.monto_recibido > 0) { %>
+                  <span class="fw-bold text-primary"><%= formatoBolivares(v.monto_recibido) %></span>
                 <% } else { %>
-                  -
+                  <span class="text-muted">-</span>
+                <% } %>
+              </td>
+              <td class="text-end">
+                <% if (v.monto_recibido && v.total_bs) { %>
+                  <span class="fw-bold text-success"><%= formatoBolivares(v.monto_recibido - v.total_bs) %></span>
+                <% } else { %>
+                  <span class="text-muted">-</span>
                 <% } %>
               </td>
               <td class="text-center">
@@ -59,7 +67,10 @@
                 <% } %>
               </td>
               <td class="text-center">
-                <% if (!v.anulada) { %>
+                <a class="btn btn-sm btn-modern-outline" href="/ventas/<%= v.id_venta %>" title="Ver Detalle">
+                  <i class="fas fa-eye"></i>
+                </a>
+                <% if (!v.anulada && usuario.rol === 'admin') { %>
                   <form style="display:inline" method="POST" action="/ventas/<%= v.id_venta %>/anular" 
                         onsubmit="return confirm('¿Anular esta venta? Se restaurará el stock.')">
                     <button class="btn btn-sm btn-modern-danger" title="Anular">
@@ -72,7 +83,7 @@
           <% }) %>
           <% if (ventas.length === 0) { %>
             <tr>
-              <td colspan="8" class="text-center py-4 text-muted">
+              <td colspan="9" class="text-center py-4 text-muted">
                 <i class="fas fa-receipt" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
                 No hay ventas registradas
               </td>

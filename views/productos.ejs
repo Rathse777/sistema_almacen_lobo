@@ -21,6 +21,19 @@
   <input type="text" id="searchProducto" class="form-control" placeholder="Buscar por nombre o código..." onkeyup="filtrarProductos()">
 </div>
 
+<script>
+  function filtrarProductos() {
+    const input = document.getElementById('searchProducto');
+    const filter = input.value.toLowerCase();
+    const rows = document.querySelectorAll('.producto-row');
+    
+    rows.forEach(row => {
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(filter) ? '' : 'none';
+    });
+  }
+</script>
+
 <div class="card-modern">
   <div class="card-body p-0">
     <div class="table-responsive">

@@ -2,14 +2,17 @@
 <% title = 'Reportes y Estadísticas' %>
 
 <div class="row g-4 mb-4">
-  <!-- Tarjeta Total Hoy -->
+  <!-- Tarjeta Ventas de Hoy -->
   <div class="col-md-4">
     <div class="card-modern p-3">
       <div class="d-flex align-items-center justify-content-between">
         <div>
           <span class="text-muted d-block small">Ventas de Hoy</span>
-          <h3 class="fw-bold text-success mb-0"><%= formatoMoneda(totalVentasHoy) %></h3>
-          <small class="text-muted"><%= cantidadVentasHoy %> venta(s) realizada(s)</small>
+          <h3 class="fw-bold text-success mb-0"><%= formatoMoneda(totalVentasHoyUSD) %></h3>
+          <small class="text-muted"><%= formatoBolivares(totalVentasHoyBs) %></small>
+          <div class="mt-1">
+            <span class="badge bg-light text-dark"><%= cantidadVentasHoy %> venta(s)</span>
+          </div>
         </div>
         <div class="bg-light p-3 rounded-circle text-success">
           <i class="fas fa-calendar-day fa-2x"></i>
@@ -23,8 +26,9 @@
     <div class="card-modern p-3">
       <div class="d-flex align-items-center justify-content-between">
         <div>
-          <span class="text-muted d-block small">Total Recaudado (Histórico)</span>
-          <h3 class="fw-bold text-primary mb-0"><%= formatoMoneda(totalVentasHistorico) %></h3>
+          <span class="text-muted d-block small">Total Histórico</span>
+          <h3 class="fw-bold text-primary mb-0"><%= formatoMoneda(totalVentasHistoricoUSD) %></h3>
+          <small class="text-muted"><%= formatoBolivares(totalVentasHistoricoBs) %></small>
         </div>
         <div class="bg-light p-3 rounded-circle text-primary">
           <i class="fas fa-chart-line fa-2x"></i>
@@ -32,7 +36,6 @@
       </div>
     </div>
   </div>
-</div>
 
 <div class="row g-4">
   <!-- Productos Más Vendidos -->
@@ -57,7 +60,10 @@
                   <tr>
                     <td><strong><%= p.nombre %></strong></td>
                     <td class="text-center"><span class="badge bg-secondary"><%= p.total_vendido %></span></td>
-                    <td class="text-end text-success fw-semibold"><%= formatoMoneda(p.total_recaudado) %></td>
+                    <td class="text-end">
+                      <span class="fw-semibold text-success"><%= formatoMoneda(p.total_recaudado) %></span>
+                      <br><small class="text-muted"><%= formatoBolivares(p.total_recaudado_bs) %></small>
+                    </td>
                   </tr>
                 <% }) %>
               <% } else { %>
@@ -96,7 +102,10 @@
                     <td>#<%= v.id_venta %></td>
                     <td><%= formatoFechaMostrar(v.fecha) %></td>
                     <td><%= v.usuario_nombre || 'Sistema' %></td>
-                    <td class="text-end fw-bold text-success"><%= formatoMoneda(v.total) %></td>
+                    <td class="text-end">
+                      <span class="fw-bold text-success"><%= formatoMoneda(v.total) %></span>
+                      <br><small class="text-muted"><%= formatoBolivares(v.total_bs) %></small>
+                    </td>
                   </tr>
                 <% }) %>
               <% } else { %>

@@ -57,6 +57,34 @@
   </div>
 </div>
 
+<!-- Tarjeta de Tasa de Cambio -->
+<div class="row mb-4">
+  <div class="col-md-12">
+    <div class="card-modern bg-info bg-opacity-10 border border-info">
+      <div class="card-body d-flex justify-content-between align-items-center">
+        <div>
+          <i class="fas fa-exchange-alt text-info me-2" style="font-size: 1.5rem;"></i>
+          <span class="fw-bold">Tasa de Cambio Actual:</span>
+        </div>
+        <div>
+          <span class="fs-4 fw-bold text-info">
+            1 USD = Bs <%= typeof tasaActual !== 'undefined' && tasaActual ? tasaActual.valor : 'N/A' %>
+          </span>
+          <span class="text-muted ms-3">
+            <i class="fas fa-calendar-alt me-1"></i>
+            <%= typeof tasaActual !== 'undefined' && tasaActual ? formatoFechaMostrar(tasaActual.fecha) : 'No disponible' %>
+          </span>
+          <% if (usuario && usuario.rol === 'admin') { %>
+            <a href="/tasa-cambio" class="btn btn-sm btn-modern-outline ms-3">
+              <i class="fas fa-edit me-1"></i> Actualizar
+            </a>
+          <% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Ventas de Hoy, Alertas de Stock y Alertas de Vencimiento -->
 <div class="row g-4">
 

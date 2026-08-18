@@ -1,5 +1,5 @@
 -- Esquema de la base de datos para Sistema_Lobo (simplificado y didáctico)
--- Tablas: Usuarios, Categorias, Productos, Lotes, Ventas, Detalle_ventas
+-- Tablas: Usuarios, Categorias, Productos, Lotes, Ventas, Detalle_ventas, TasaCambio
 -- Todas las fechas se guardan en formato ISO (YYYY-MM-DD)
 
 PRAGMA foreign_keys = ON;
@@ -18,17 +18,27 @@ CREATE TABLE IF NOT EXISTS Categorias (
   nombre TEXT NOT NULL UNIQUE
 );
 
+-- Tasa de Cambio
+CREATE TABLE IF NOT EXISTS TasaCambio (
+  id_tasa INTEGER PRIMARY KEY AUTOINCREMENT,
+  valor REAL NOT NULL,
+  fecha TEXT NOT NULL UNIQUE,
+  creado_por INTEGER,
+  FOREIGN KEY (creado_por) REFERENCES Usuarios(Id_usuario)
+);
+
 -- Productos
 CREATE TABLE IF NOT EXISTS Productos (
   id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
-  codigo TEXT,
+  codigo TEXT UNIQUE,
   descripcion TEXT,
   id_categoria INTEGER,
   stock_total INTEGER NOT NULL DEFAULT 0,
   stock_minimo INTEGER NOT NULL DEFAULT 0,
-  precio_venta REAL DEFAULT 0, -- precio por unidad si no hay lote
-  fecha_vencimiento TEXT, -- fecha de referencia (opcional)
+  precio_venta REAL DEFAULT 0,
+  precio_venta_bs REAL DEFAULT 0,
+  fecha_vencimiento TEXT,
   FOREIGN KEY (id_categoria) REFERENCES Categorias(id_categoria) ON DELETE SET NULL
 );
 
@@ -40,6 +50,7 @@ CREATE TABLE IF NOT EXISTS Lotes (
   cantidad_actual INTEGER NOT NULL,
   precio_compra REAL DEFAULT 0,
   precio_venta REAL DEFAULT 0,
+  precio_venta_bs REAL DEFAULT 0,
   fecha_ingreso TEXT NOT NULL,
   fecha_vencimiento TEXT,
   FOREIGN KEY (id_producto) REFERENCES Productos(id_producto) ON DELETE CASCADE
@@ -50,9 +61,11 @@ CREATE TABLE IF NOT EXISTS Ventas (
   id_venta INTEGER PRIMARY KEY AUTOINCREMENT,
   fecha TEXT NOT NULL,
   total REAL NOT NULL,
+  total_bs REAL NOT NULL,
   monto_recibido REAL,
   id_usuario INTEGER,
   anulada INTEGER NOT NULL DEFAULT 0,
+  tasa_cambio REAL,
   FOREIGN KEY (id_usuario) REFERENCES Usuarios(Id_usuario) ON DELETE SET NULL
 );
 
@@ -61,9 +74,10 @@ CREATE TABLE IF NOT EXISTS Detalle_ventas (
   id_detalle INTEGER PRIMARY KEY AUTOINCREMENT,
   id_venta INTEGER NOT NULL,
   id_producto INTEGER NOT NULL,
-  id_lote INTEGER, -- lote usado (puede ser NULL si no hay)
+  id_lote INTEGER,
   cantidad INTEGER NOT NULL,
   precio_unitario REAL NOT NULL,
+  precio_unitario_bs REAL NOT NULL,
   FOREIGN KEY (id_venta) REFERENCES Ventas(id_venta) ON DELETE CASCADE,
   FOREIGN KEY (id_producto) REFERENCES Productos(id_producto),
   FOREIGN KEY (id_lote) REFERENCES Lotes(id_lote)

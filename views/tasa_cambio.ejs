@@ -1,0 +1,77 @@
+<% layout('layout') -%>
+<% title = 'Tasa de Cambio' %>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h2 class="fw-bold" style="letter-spacing: -0.5px;">
+      <i class="fas fa-exchange-alt me-2 text-primary"></i>Tasa de Cambio
+    </h2>
+    <p class="text-muted" style="font-size: 0.9rem;">Actualización diaria del dólar a bolívares</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-plus-circle me-2"></i> Actualizar Tasa
+      </div>
+      <div class="card-body">
+        <% if (tasaActual) { %>
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Tasa actual: <strong>1 USD = Bs <%= tasaActual.valor %></strong>
+            <br>
+            <small class="text-muted">Actualizada: <%= formatoFechaMostrar(tasaActual.fecha) %></small>
+          </div>
+        <% } %>
+
+        <form method="POST" action="/tasa-cambio">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Valor del Dólar (Bs)</label>
+            <input name="valor" type="number" step="0.01" min="0" class="form-control form-control-lg" 
+                   placeholder="Ej: 40.00" required>
+          </div>
+          <button class="btn btn-modern-primary w-100">
+            <i class="fas fa-save me-2"></i> Actualizar Tasa
+          </button>
+        </form>
+
+        <hr>
+        <div class="text-muted small">
+          <i class="fas fa-info-circle me-1"></i>
+          Al actualizar la tasa, se actualizarán automáticamente los precios en bolívares de todos los productos y lotes.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card-modern">
+      <div class="card-header">
+        <i class="fas fa-history me-2"></i> Historial de Tasas
+        <span class="badge bg-secondary rounded-pill ms-2"><%= historial ? historial.length : 0 %></span>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-modern mb-0">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th class="text-end">Valor (Bs)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% historial.forEach(h => { %>
+                <tr>
+                  <td><%= formatoFechaMostrar(h.fecha) %></td>
+                  <td class="text-end fw-bold"><%= h.valor %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

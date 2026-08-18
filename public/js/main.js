@@ -123,4 +123,18 @@ document.addEventListener('DOMContentLoaded', () => {
             formVenta.submit();
         });
     }
+// Formatear número con separador de miles
+function formatNumber(num, decimals = 2) {
+    if (isNaN(num)) return '0.00';
+    return Number(num).toFixed(decimals);
+}
+
+// Validar que solo se ingresen números y decimales
+function validateNumberInput(event) {
+    const charCode = event.charCode;
+    const char = String.fromCharCode(charCode);
+    if (!/[\d,.]/.test(char) && charCode !== 0) {
+        event.preventDefault();
+    }
+}
 });
