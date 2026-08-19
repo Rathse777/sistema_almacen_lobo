@@ -4,7 +4,7 @@
 
 PRAGMA foreign_keys = ON;
 
--- Usuarios: Id_usuario, nombre, rol, contraseña
+-- Usuarios 
 CREATE TABLE IF NOT EXISTS Usuarios (
   Id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
   nombre TEXT NOT NULL,
