@@ -517,6 +517,31 @@ app.post('/usuarios', requiereLogin, requiereAdmin, (req, res) => {
   res.redirect('/usuarios');
 });
 
+app.post('/usuarios/:id/eliminar', requiereLogin, requiereAdmin, (req, res) => {
+  const idEliminar = Number(req.params.id);
+  const idActual = req.session.usuario.Id_usuario;
+
+  // Evitar que el administrador se elimine a sí mismo
+  if (idEliminar === idActual) {
+    return res.status(400).send('No puedes eliminar tu propio usuario.');
+  }
+
+  try {
+    // Verificar si el usuario tiene ventas registradas
+    const ventasAsociadas = db.prepare('SELECT COUNT(*) as total FROM Ventas WHERE id_usuario = ?').get(idEliminar);
+    
+    if (ventasAsociadas && ventasAsociadas.total > 0) {
+      return res.status(400).send('No se puede eliminar el usuario porque tiene ventas registradas asociadas.');
+    }
+
+    db.prepare('DELETE FROM Usuarios WHERE Id_usuario = ?').run(idEliminar);
+    res.redirect('/usuarios');
+  } catch (error) {
+    console.error('Error al eliminar usuario:', error);
+    res.status(500).send('Error al eliminar usuario: ' + error.message);
+  }
+});
+
 // --- Rutas Ventas ---
 app.get('/ventas', requiereLogin, (req, res) => {
   let ventas;

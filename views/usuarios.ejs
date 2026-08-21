@@ -56,6 +56,7 @@
                 <th>Nombre</th>
                 <th>Rol</th>
                 <th class="text-center">Estado</th>
+                <th class="text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -73,6 +74,15 @@
                       <i class="fas fa-check-circle me-1"></i> Activo
                     </span>
                   </td>
+                  <td class="text-center">
+                    <% if (usuario && usuario.Id_usuario !== u.Id_usuario) { %>
+                      <form method="POST" action="/usuarios/<%= u.Id_usuario %>/eliminar" style="display: inline;" onsubmit="return confirm('¿Estás seguro de eliminar este usuario?');">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Eliminar Usuario">
+                          <i class="fas fa-trash-alt"></i>
+                        </button>
+                      </form>
+                    <% } %>
+                  </td>
                 </tr>
               <% }) %>
             </tbody>
@@ -80,5 +90,4 @@
         </div>
       </div>
     </div>
-  </div>
-</div>
+  </div> 
